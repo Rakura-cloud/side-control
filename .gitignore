@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 .ruff_cache/
 .venv/
+
+# AppImage build (packaging/appimage/build.sh)
+build/
+dist/
+*.AppImage

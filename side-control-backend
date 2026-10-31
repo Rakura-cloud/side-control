@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Starts Side Control's backend from wherever this file is (a git checkout, or inside the AppImage).
+A file to run rather than python -m, because pkexec starts its programs in another directory."""
+import os
+import runpy
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+runpy.run_module("side_control.backend", run_name="__main__", alter_sys=True)

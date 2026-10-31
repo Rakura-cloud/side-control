@@ -7,13 +7,18 @@ for Linux.
 ![Devices](docs/screenshots/devices.png)
 
 Side Control makes your computer a Bluetooth keyboard and mouse for each paired device. No app runs on
-the phone: iOS and iPadOS treat it like any other Bluetooth keyboard and mouse, with the pointer shown
-by AssistiveTouch.
+the phone or tablet: it sees an ordinary Bluetooth keyboard and mouse.
 
-> **Status: early release (0.1.0).** It is developed and tested on Arch Linux with Hyprland, an iPhone
-> and an iPad. Other distributions and compositors should mostly work, see
-> [Requirements](#requirements). Android devices pair and work as a plain keyboard and mouse, but are
-> untested.
+> **Status: early release (0.1.0).** Developed and tested on Arch Linux with Hyprland, an iPhone and an
+> iPad. Other distributions and compositors should mostly work, see [Requirements](#requirements).
+
+## Supported devices
+
+| Device | Status | Notes |
+|---|---|---|
+| iPhone | Supported | Needs **AssistiveTouch** turned on (Settings → Accessibility → Touch → AssistiveTouch): iOS only shows a pointer with it. |
+| iPad | Supported | Works as is: iPadOS has its own pointer. AssistiveTouch is only needed for the extra mouse buttons (Home, Control Center, …). |
+| Android phone / tablet | Untested | Pairs and should work as a Bluetooth keyboard and mouse. Reports are welcome. |
 
 ## Features
 
@@ -34,43 +39,43 @@ by AssistiveTouch.
 | ![Layout](docs/screenshots/layout.png) | ![Gestures & Keybindings](docs/screenshots/gestures.png) |
 | ![Appearance](docs/screenshots/appearance.png) | ![Settings](docs/screenshots/settings.png) |
 
-## Requirements
+## Install
 
-- **Linux with BlueZ** and a Bluetooth adapter (Bluetooth Classic, which nearly all have).
-- **Python 3** with PyGObject, pycairo, dbus-python and python-evdev.
-- **GTK 4 and libadwaita.** Tested with GTK 4.24 and libadwaita 1.10; older versions may lack widgets
-  the app uses.
-- **polkit** (`pkexec`): the backend runs as root to use Bluetooth sockets and read your keyboard and
-  touchpad, and Side Control starts it through `pkexec`.
-- **Hyprland** for edge hand-off: Side Control asks it where the cursor is. On other compositors
-  everything else works, and you switch with the shortcuts or the three-finger swipe instead.
-- **gtk4-layer-shell** (optional) for the on-screen edge indicator.
+### AppImage
 
-On Arch Linux:
+Download `Side_Control-<version>-x86_64.AppImage` from the
+[latest release](https://github.com/Rakura-cloud/side-control/releases/latest), then:
 
 ```sh
-sudo pacman -S python python-gobject python-cairo python-dbus python-evdev gtk4 libadwaita \
-    bluez bluez-utils polkit gtk4-layer-shell
+chmod +x Side_Control-*-x86_64.AppImage
+./Side_Control-*-x86_64.AppImage
 ```
 
-## Install and run
+It bundles Python, GTK and everything else it needs, so it runs on any x86_64 distribution. Your system
+still needs what Side Control talks to: BlueZ, polkit, and Hyprland for edge hand-off (see below).
+
+### From source
+
+Install the [requirements](#requirements), then:
 
 ```sh
 git clone https://github.com/Rakura-cloud/side-control.git
 cd side-control
-python side_control.py
+./side-control
 ```
 
-The first time, Side Control asks for your password to start its backend
-(`side_control_backend.py`). Turn on **Settings → Launch at Login** to start it with your session; it
-then stays in the tray.
+### First run
 
-### Set up each iPhone or iPad
+Side Control asks for your password to start its backend, which runs as root. Turn on
+**Settings → Launch at Login** to start it with your session; it then stays in the tray.
+
+Then, for each device:
 
 1. Click **+** in Side Control, then open **Settings → Bluetooth** on the phone or tablet and pick it
    from the list in Side Control.
-2. On the device, turn on **Settings → Accessibility → Touch → AssistiveTouch**. iOS only shows a
-   pointer while it is on. You can turn off **Always Show Menu** to hide the floating button.
+2. On an iPhone, turn on **Settings → Accessibility → Touch → AssistiveTouch** (see
+   [Supported devices](#supported-devices)). You can turn off **Always Show Menu** to hide its floating
+   button.
 3. In Side Control's **Layout** page, drag the device to the side of your screen where it sits.
 
 ### Bluetooth mice and keyboards on the computer
@@ -81,8 +86,33 @@ own Bluetooth input support or Side Control. **Settings → Own HID Profile** ch
 - **Off** (Bluetooth mice and keyboards work): Side Control connects to your devices itself, within
   10 to 30 seconds after they come in range.
 - **On:** your devices can also connect to Side Control by themselves, but Bluetooth mice and
-  keyboards can't connect to this computer. It installs `bluetooth-no-input.conf` as a drop-in for
+  keyboards can't connect to this computer. It installs
+  [`bluetooth-no-input.conf`](side_control/data/bluetooth-no-input.conf) as a drop-in for
   `bluetooth.service` (bluetoothd runs with `-P input`).
+
+## Requirements
+
+Needed by the AppImage too:
+
+- **Linux with BlueZ** and a Bluetooth adapter (Bluetooth Classic, which nearly all have).
+- **polkit** (`pkexec`): the backend runs as root to use Bluetooth sockets and read your keyboard and
+  touchpad, and Side Control starts it through `pkexec`.
+- **Hyprland** for edge hand-off: Side Control asks it where the cursor is. On other compositors
+  everything else works, and you switch with the shortcuts or the three-finger swipe instead.
+
+Bundled in the AppImage, needed when running from source:
+
+- **Python 3** with PyGObject, pycairo, dbus-python and python-evdev.
+- **GTK 4 and libadwaita.** Tested with GTK 4.24 and libadwaita 1.10; older versions may lack widgets
+  the app uses.
+- **gtk4-layer-shell** (optional) for the on-screen edge indicator.
+
+On Arch Linux:
+
+```sh
+sudo pacman -S python python-gobject python-cairo python-dbus python-evdev gtk4 libadwaita \
+    bluez bluez-utils polkit gtk4-layer-shell
+```
 
 ## Usage
 
@@ -123,11 +153,17 @@ own Bluetooth input support or Side Control. **Settings → Own HID Profile** ch
 
 ## How it works
 
-`side_control.py` is the GTK window and tray, running as you. `side_control_backend.py` runs as root:
-it registers a Bluetooth HID keyboard and mouse with BlueZ, reads your keyboard and touchpad with
-evdev, takes them over while a device has the cursor, and sends HID reports to it. The two talk JSON
-over the unix socket `/run/side-control.sock`. Settings are stored in
-`~/.config/side-control/settings.json`.
+Side Control is two programs that talk JSON over the unix socket `/run/side-control.sock`:
+
+- **The app** ([`side_control/app/`](side_control/app/), started by `./side-control`) is the GTK window,
+  tray icon and edge indicator, running as you. Settings are stored in
+  `~/.config/side-control/settings.json`.
+- **The backend** ([`side_control/backend/`](side_control/backend/), started by
+  `./side-control-backend`) runs as root. It registers a Bluetooth HID keyboard and mouse with BlueZ,
+  reads your keyboard and touchpad with evdev, takes them over while a device has the cursor, and sends
+  HID reports to it.
+
+[AGENTS.md](AGENTS.md) maps out every module.
 
 ## Contributing
 
@@ -137,5 +173,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and ideas: [issues](https://github.
 
 [GPL-3.0-or-later](LICENSE).
 
-The `icons/sc-*` icons are [Material Symbols](https://github.com/google/material-design-icons) by
-Google, under the [Apache License 2.0](icons/LICENSE-Material-Symbols).
+The `sc-*` icons in [`side_control/data/icons/`](side_control/data/icons/) are
+[Material Symbols](https://github.com/google/material-design-icons) by Google, under the
+[Apache License 2.0](side_control/data/icons/LICENSE-Material-Symbols).

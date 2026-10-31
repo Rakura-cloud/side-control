@@ -1,0 +1,34 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.arrangement {
+  border-radius: 12px;
+  background-color: alpha(currentColor, 0.04);
+  background-image: radial-gradient(circle, alpha(currentColor, 0.10) 1px, transparent 1.5px);
+  background-size: 16px 16px;
+  box-shadow: inset 0 0 0 1px alpha(currentColor, 0.08);
+}
+.screen-tile {
+  border-radius: 8px;
+  background-color: alpha(@accent_bg_color, 0.22);
+  box-shadow: inset 0 0 0 2px @accent_bg_color;
+}
+.screen-tile image { color: @accent_bg_color; }
+.device-tile {
+  border-radius: 10px;
+  background-color: @card_bg_color;
+  box-shadow: inset 0 0 0 2px alpha(currentColor, 0.22);
+}
+.device-tile.inactive { box-shadow: inset 0 0 0 2px alpha(currentColor, 0.08); }
+.device-tile.dragging { box-shadow: 0 0 0 2px @accent_bg_color, 0 10px 24px alpha(black, 0.4); }
+.device-tile label { font-size: 11px; font-weight: bold; }
+.edge-indicator { border-radius: 2px; background-color: @accent_bg_color; }
+.device-row { min-height: 64px; }
+.step-number {
+  min-width: 24px; min-height: 24px; border-radius: 99px;
+  background-color: alpha(currentColor, 0.12); font-weight: bold; font-size: 13px;
+}
+.crumb { padding: 3px 8px; border-radius: 6px; background-color: alpha(currentColor, 0.1);
+         font-weight: bold; font-size: 13px; }
+.version { padding: 2px 20px 14px; }
+window.edge-overlay { background: none; }
+.sc-sidebar image { -gtk-icon-size: 19px; }
+.icon-20 image, image.icon-20 { -gtk-icon-size: 20px; }

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Side Control
+Comment=Use this computer's keyboard and touchpad on your iPhone and iPad
+Exec=side-control
+Icon=io.github.sidecontrol.SideControl
+Terminal=false
+Categories=Utility;Settings;HardwareSettings;
+Keywords=iPhone;iPad;Bluetooth;keyboard;mouse;touchpad;Universal Control;
+StartupWMClass=io.github.sidecontrol.SideControl

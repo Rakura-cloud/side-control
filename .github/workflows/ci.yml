@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: archlinux:latest  # the newest GTK 4 and libadwaita, like the AppImage build
+    steps:
+      - name: Install dependencies
+        run: >-
+          pacman -Syu --noconfirm --needed git python python-gobject python-cairo python-dbus
+          python-evdev gtk4 libadwaita ruff
+
+      - uses: actions/checkout@v4
+
+      - name: Lint
+        run: ruff check --select F,E9 .
+
+      - name: Test
+        run: python -m unittest discover tests -v

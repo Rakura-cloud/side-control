@@ -60,7 +60,8 @@ def serve():
 
 threading.Thread(target=serve, daemon=True).start()
 
-import side_control as sc  # noqa: E402
+from side_control.app.application import App  # noqa: E402
+from side_control.app.window import PAGES, Window  # noqa: E402
 from gi.repository import GLib, Gtk  # noqa: E402
 
 
@@ -83,7 +84,7 @@ def close_dialog(win):
 
 def script(win):
     steps = []
-    for i, (name, *_rest) in enumerate(sc.PAGES):
+    for i, (name, *_rest) in enumerate(PAGES):
         steps += [lambda i=i: win.show_page(i), lambda name=name: shot(win, name.lower())]
     steps += [lambda: win.show_page(0),
               lambda: win.show_guide("AA:00:00:00:00:01"), lambda: shot(win, "guide"), lambda: close_dialog(win),
@@ -98,9 +99,9 @@ def script(win):
     GLib.timeout_add(900, run)
 
 
-class ScreenshotApp(sc.App):
+class ScreenshotApp(App):
     def do_activate(self):
-        self.window = win = sc.Window(self)
+        self.window = win = Window(self)
         win.started_backend = True  # never try to start the real one
         win.stack.set_transition_type(Gtk.StackTransitionType.NONE)
         win.present()

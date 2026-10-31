@@ -6,7 +6,12 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import side_control_backend as b  # noqa: E402
+from side_control.backend import config  # noqa: E402
+from side_control.backend.bridge import Bridge  # noqa: E402
+from side_control.backend.devices import SCREEN_POINTS, Phone  # noqa: E402
+from side_control.backend.handoff import Handoff, handoff_exits  # noqa: E402
+from side_control.backend.hid import REPORT_MAP  # noqa: E402
+from side_control.backend.inputs import Touchpad  # noqa: E402
 
 
 class FakePhone:
@@ -44,10 +49,10 @@ class FakeCompositor:
 
 
 def make_bridge(phone):
-    bridge = b.Bridge.__new__(b.Bridge)  # no input devices, fleet or proximity
+    bridge = Bridge.__new__(Bridge)  # no input devices, fleet or proximity
     bridge.touchpads, bridge.phone, bridge.on_phone, bridge.locked = {}, phone, True, False
     bridge.reset_reports()
-    bridge.handoff = b.Handoff(bridge, None, None, FakeCompositor())
+    bridge.handoff = Handoff(bridge, None, None, FakeCompositor())
 
     def switch_to(device):
         bridge.on_phone = device is not None
@@ -64,7 +69,7 @@ def drain(bridge):
 
 
 def make_touchpad():
-    tp = b.Touchpad.__new__(b.Touchpad)  # positions in mm
+    tp = Touchpad.__new__(Touchpad)  # positions in mm
     tp.resx = tp.resy = 1
     tp.contacts = {}
     tp.reset()
@@ -74,7 +79,7 @@ def make_touchpad():
 class ReportMap(unittest.TestCase):
     def test_report_sizes(self):
         """The descriptor parses into the report sizes the code sends: keyboard 8 bytes, mouse 5."""
-        data, i, size, count, rid, bits = b.REPORT_MAP, 0, 0, 0, 0, {}
+        data, i, size, count, rid, bits = REPORT_MAP, 0, 0, 0, 0, {}
         while i < len(data):
             prefix = data[i]
             n = (0, 1, 2, 4)[prefix & 3]
@@ -94,7 +99,7 @@ class ReportMap(unittest.TestCase):
 
 class ScreenSize(unittest.TestCase):
     def phone(self, model, vendor=0x004C):
-        phone = b.Phone(0, "AA:BB:CC:DD:EE:FF", "device")
+        phone = Phone(0, "AA:BB:CC:DD:EE:FF", "device")
         phone.vendor, phone.model = vendor, model
         return phone
 
@@ -103,14 +108,14 @@ class ScreenSize(unittest.TestCase):
         self.assertEqual(self.phone("iPad13,16").size(), (1180, 820))  # on its side
 
     def test_unknown_model_uses_default(self):
-        self.assertEqual(self.phone(None).size(), b.DEFAULT_SCREEN["iPhone"])
+        self.assertEqual(self.phone(None).size(), config.DEFAULT_SCREEN["iPhone"])
 
     def test_every_model_has_one_size(self):
-        models = [m for ms in b.SCREEN_POINTS.values() for m in ms.split()]
+        models = [m for ms in SCREEN_POINTS.values() for m in ms.split()]
         self.assertEqual(len(models), len(set(models)))
 
 
-class Handoff(unittest.TestCase):
+class HandoffTest(unittest.TestCase):
     def test_enters_at_matching_height_and_returns_there(self):
         phone = FakePhone(size=(1180, 820))
         bridge = make_bridge(phone)
@@ -123,14 +128,14 @@ class Handoff(unittest.TestCase):
             drain(bridge)
             self.assertAlmostEqual(h.vy / 820, frac, places=2)
             # the glide after the pin moves at most GLIDE_STEP per report
-            self.assertLessEqual(max(abs(y) for _, _, y in phone.reports[-5:]), b.GLIDE_STEP)
-        bridge.dx = -(b.RETURN_PUSH + 50.0)  # push back out through the side it came in by
+            self.assertLessEqual(max(abs(y) for _, _, y in phone.reports[-5:]), config.GLIDE_STEP)
+        bridge.dx = -(config.RETURN_PUSH + 50.0)  # push back out through the side it came in by
         drain(bridge)
         self.assertFalse(bridge.on_phone)
         self.assertAlmostEqual(h.comp.warped[1], 0.8 * 1080, delta=2)
 
     def test_exit_spans(self):
-        (edge, inside), = b.handoff_exits("left", (0.2, 0.6))
+        (edge, inside), = handoff_exits("left", (0.2, 0.6))
         self.assertEqual(edge, "left")
         self.assertTrue(inside(0.4))
         self.assertFalse(inside(0.7))
@@ -172,7 +177,7 @@ class SwipeFlick(unittest.TestCase):
         h = bridge.handoff
         h.edge, h.vx, h.vy = "right", 380.0, 400.0
         self.swipe(bridge, make_touchpad(), 20)  # towards the right edge, 13 counts away
-        need = b.FLICK_ROOM * b.FLICK_STEP * b.FLICK_REPORTS
+        need = config.FLICK_ROOM * config.FLICK_STEP * config.FLICK_REPORTS
         self.assertGreaterEqual(393 - h.vx, need - 1)
 
 

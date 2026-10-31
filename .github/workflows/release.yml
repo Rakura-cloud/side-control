@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Push a tag vX.Y.Z (matching VERSION in side_control/__init__.py) to build the AppImage and publish
+# it as a GitHub release. Run it by hand (Actions > Release > Run workflow) to only build it.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # to create the release
+
+jobs:
+  appimage:
+    runs-on: ubuntu-latest
+    container: archlinux:latest  # quick-sharun is made for Arch build hosts
+    steps:
+      - name: Install build dependencies
+        run: >-
+          pacman -Syu --noconfirm --needed base-devel git curl patchelf python python-gobject
+          python-cairo python-dbus python-evdev gtk4 libadwaita gtk4-layer-shell glycin
+
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' side_control/__init__.py)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match VERSION = \"$version\" in side_control/__init__.py"
+              exit 1
+          fi
+
+      - name: Test
+        run: python -m unittest discover tests
+
+      - name: Build the AppImage
+        run: packaging/appimage/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AppImage
+          path: dist/*
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
