@@ -32,11 +32,13 @@ HID_DROPIN = os.path.join(DROPIN_DIR, "side-control-no-input.conf")
 
 DEFAULTS = {"share_cursor": True, "share_clipboard": True, "switch_delay_ms": 150, "corner_dead_zones": True,
             "match_speed": True, "three_finger_switch": True, "shake_to_locate": False, "tap_to_click": True,
+            "mouse_natural_scroll": False,
             "indicator": "near", "indicator_within": 48, "indicator_names": True,
             "run_in_background": True, "visible": False, "device_name": None, "adapter": None,
             "hid_banner_dismissed": False}
 DEVICE_DEFAULTS = {"enabled": True, "edge": None, "x": None, "y": None}
-BACKEND_OPTIONS = ("share_cursor", "switch_delay_ms", "three_finger_switch", "shake_to_locate", "tap_to_click")
+BACKEND_OPTIONS = ("share_cursor", "switch_delay_ms", "three_finger_switch", "shake_to_locate", "tap_to_click",
+                   "mouse_natural_scroll")
 
 
 
