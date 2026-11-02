@@ -32,6 +32,7 @@ SHAKE_WINDOW_S = 0.8     # ...within this long...
 SHAKE_MIN_MM = 3.0       # ...each after at least this much travel
 BATTERY_EVERY = 300      # seconds between battery readings of a connected device
 NATURAL_SCROLL = True  # content follows the fingers, like on iOS itself
+MOUSE_NATURAL_SCROLL = False  # the mouse wheel turned the other way: content follows the wheel
 TAP_TO_CLICK = True   # a quick touchpad tap clicks (two fingers: secondary click)
 TOUCHPAD_SPEED = 18.0 # mouse counts per mm of finger travel
 SCROLL_STEP_MM = 2.5  # finger travel per wheel step (two-finger scroll, up/down and left/right)
@@ -75,6 +76,7 @@ RECONNECT_EVERY = 10  # seconds between attempts to dial a paired device (doubli
 DIAL_ONLY = False     # set when bluetoothd's input plugin holds the HID channels: devices cannot connect
 DIAL_ONLY_MAX_S = 30  # to us then, so keep dialing them more often
 MOUSE_INTERVAL = 0.008  # min seconds between motion reports; motion in between is merged
+INPUT_RESCAN_S = 1.0    # seconds between looks for new input devices (a Bluetooth mouse waking up)
 
 # Continuity-style hand-off between the PC pointer and the phone's pointer
 HANDOFF_ZONES = ("top-left", "top", "top-right", "left", "right", "bottom-left", "bottom", "bottom-right")
@@ -94,6 +96,18 @@ PIN_EXTRA = 1200        # extra counts sent to pin the phone pointer against the
 RETURN_PUSH = 200       # counts pushed past the phone's edge to bring the pointer back to the PC
 RETURN_INSET_PX = 40    # where the pointer reappears, away from the PC screen edge
 MOUSE_COUNTS_PER_MM = 40.0
+MOUSE_SPEED = 1.0       # device pointer counts per mouse count before acceleration: 1:1, like the PC pointer
+# Mouse acceleration, as libinput's default (adaptive, speed 0) does it on the PC: iOS adds none to a
+# Bluetooth mouse, so without it a flick that crosses the PC screen barely moves the device pointer.
+# Speeds in counts per ms (a 1000 DPI mouse), measured over MOUSE_ACCEL_WINDOW_S
+MOUSE_ACCEL_THRESHOLD = 0.4  # 1:1 up to this speed (10 mm/s)...
+MOUSE_ACCEL_INCLINE = 1.1    # ...then this much more gain per count/ms...
+MOUSE_ACCEL_MAX = 1.0        # ...up to this much: 1.0 turns acceleration off (2.0 is libinput's)
+MOUSE_ACCEL_SLOW = 0.0       # below this the gain drops towards 0.3, for precise small moves (0.07 in libinput)
+MOUSE_ACCEL_WINDOW_S = 0.04  # long enough to span a few reports: Bluetooth delivers them in bursts
+MOUSE_ACCEL_FIRST_S = 0.008  # the first report of a move counts as this much time of moving
+MOUSE_PAUSE_S = 0.3     # a mouse at rest this long ends a push against the edge, like lifting the finger
+                        # off the touchpad: nudges spread over minutes do not add up to a hand-off
 CALIBRATE_RATE = 250    # counts per second while measuring a screen edge to edge
 CALIBRATE_REACTION_S = 0.15  # subtract this much sweep: the time you need to press Stop
 CALIBRATE_MAX_S = 25
@@ -102,7 +116,8 @@ SCAN_WHILE_CONTROLLING = False  # keep the LE proximity scan on while a device h
 
 SOCK_PATH = os.environ.get("SIDE_CONTROL_SOCK", "/run/side-control.sock")  # GUI <-> this process
 # set_options from the GUI: option -> (global it sets, type)
-OPTIONS = {"natural_scroll": ("NATURAL_SCROLL", bool), "tap_to_click": ("TAP_TO_CLICK", bool),
+OPTIONS = {"natural_scroll": ("NATURAL_SCROLL", bool), "mouse_natural_scroll": ("MOUSE_NATURAL_SCROLL", bool),
+           "tap_to_click": ("TAP_TO_CLICK", bool),
            "share_cursor": ("SHARE_CURSOR", bool), "three_finger_switch": ("THREE_FINGER_SWITCH", bool),
            "shake_to_locate": ("SHAKE_TO_LOCATE", bool),
            "swipe_flick": ("SWIPE_FLICK", bool), "swipe_up_home": ("SWIPE_UP_HOME", bool),

@@ -26,6 +26,8 @@ from .config import (
     MOD_KEYS,
     MOUSE_COUNTS_PER_MM,
     MOUSE_INTERVAL,
+    MOUSE_PAUSE_S,
+    MOUSE_SPEED,
     PINCH_STEP_MM,
     SCAN_WHILE_CONTROLLING,
     SCROLL_STEP_MM,
@@ -42,15 +44,17 @@ from .config import (
 from .devices import NO_PHONE
 from .events import EVENTS, log
 from .hid import BUTTONS, FINGERS, KEYMAP, MODS, disable_sniff
-from .inputs import Shake, Touchpad, is_touchpad
+from .inputs import Accel, Shake, Touchpad, is_touchpad, scan_inputs
 
 
 class Bridge:
-    def __init__(self, fleet, devices):
+    def __init__(self, fleet):
         self.fleet = fleet
         self.phone = NO_PHONE  # output device: the one in control, or the last one that was
-        self.devices = devices  # fd -> InputDevice
-        self.touchpads = {fd: Touchpad(d) for fd, d in devices.items() if is_touchpad(d)}
+        self.devices = {}  # fd -> InputDevice
+        self.touchpads = {}  # fd -> Touchpad, for the devices that are touchpads
+        self.accels = {}  # fd -> Accel, for the mice
+        self.seen = set()  # input device nodes looked at (see scan_inputs)
         self.on_phone = False
         self.toggle_pending = False
         self.action_pending = None  # a HOTKEYS action, run once every key is up again
@@ -60,7 +64,22 @@ class Bridge:
         self.handoff = None  # set by main() once Proximity exists
         self.proximity = None
         self.rel = [0, 0]    # mouse motion collected until the next SYN while the PC has control
+        self.rel_t = 0.0     # when that motion last went to the hand-off
         self.reset_reports()
+        self.rescan()
+
+    def rescan(self):
+        """Pick up input devices that appeared (a Bluetooth mouse that woke up, a USB keyboard), taken
+        over at once if a device has the cursor."""
+        for fd, dev in scan_inputs(self.seen).items():
+            self.devices[fd] = dev
+            if is_touchpad(dev):
+                self.touchpads[fd] = Touchpad(dev)
+            if self.on_phone:
+                try:
+                    dev.grab()
+                except OSError:
+                    pass
 
     def reset_reports(self):
         self.mods, self.keys, self.buttons = 0, [], 0
@@ -140,6 +159,15 @@ class Bridge:
             log(f"lost input device {dev.name}")
             del self.devices[fd]
             self.touchpads.pop(fd, None)
+            self.accels.pop(fd, None)
+            try:
+                dev.close()
+            except OSError:
+                pass
+            self.held.clear()  # keys held on it will never be let go
+            if self.on_phone:  # nor on the device
+                self.release_all()
+                self.mods, self.keys, self.buttons = 0, [], 0
             return
         tp = self.touchpads.get(fd)
         for ev in events:
@@ -160,13 +188,20 @@ class Bridge:
             elif ev.type == e.EV_KEY:
                 self.key_event(ev)
             elif ev.type == e.EV_REL:
-                if ev.code == e.REL_X:
-                    self.dx += ev.value * self.phone.speed
-                elif ev.code == e.REL_Y:
-                    self.dy += ev.value * self.phone.speed
-                elif ev.code == e.REL_WHEEL:
-                    self.wheel += ev.value
+                if ev.code in (e.REL_X, e.REL_Y):
+                    self.accels.setdefault(fd, Accel()).frame[ev.code == e.REL_Y] += ev.value
+                elif ev.code in (e.REL_WHEEL, e.REL_HWHEEL):  # HWHEEL counts right as positive, like AC Pan
+                    step = -ev.value if config.MOUSE_NATURAL_SCROLL else ev.value
+                    if ev.code == e.REL_WHEEL:
+                        self.wheel += step
+                    else:
+                        self.pan += step
             elif ev.type == e.EV_SYN:
+                accel = self.accels.get(fd)
+                if accel and any(accel.frame):
+                    ax, ay = accel.take(time.monotonic())
+                    self.dx += ax * MOUSE_SPEED * self.phone.speed
+                    self.dy += ay * MOUSE_SPEED * self.phone.speed
                 self.flush_mouse()
         if self.toggle_pending and not self.held:
             self.toggle_pending = False
@@ -244,6 +279,12 @@ class Bridge:
             if ev.code in (e.REL_X, e.REL_Y):
                 self.rel[ev.code == e.REL_Y] += ev.value
         elif ev.type == e.EV_SYN and any(self.rel):
+            now = time.monotonic()
+            if now - self.rel_t < MOUSE_INTERVAL:  # a gaming mouse reports 1000 times a second: merge
+                return
+            if h and now - self.rel_t > MOUSE_PAUSE_S:  # moving again after a rest
+                h.push.clear()
+            self.rel_t = now
             rx, ry, self.rel = self.rel[0], self.rel[1], [0, 0]
             motion = (rx / MOUSE_COUNTS_PER_MM, ry / MOUSE_COUNTS_PER_MM)
         if motion is None:

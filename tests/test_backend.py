@@ -2,8 +2,10 @@
 """Backend logic that needs no Bluetooth, input devices or root: python -m unittest discover tests"""
 import os
 import sys
+import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from side_control.backend import config  # noqa: E402
@@ -11,7 +13,10 @@ from side_control.backend.bridge import Bridge  # noqa: E402
 from side_control.backend.devices import SCREEN_POINTS, Phone  # noqa: E402
 from side_control.backend.handoff import Handoff, handoff_exits  # noqa: E402
 from side_control.backend.hid import REPORT_MAP  # noqa: E402
-from side_control.backend.inputs import Touchpad  # noqa: E402
+from side_control.backend import inputs  # noqa: E402
+from side_control.backend.bluez import form_of  # noqa: E402
+from side_control.backend.inputs import Accel, Touchpad  # noqa: E402
+from evdev import InputEvent, ecodes as e  # noqa: E402
 
 
 class FakePhone:
@@ -22,8 +27,10 @@ class FakePhone:
     def __init__(self, size=(393, 852)):
         self._size = size
         self.reports = []
+        self.raw = []  # every report: (report id, bytes)
 
     def send(self, report_id, payload):
+        self.raw.append((report_id, bytes(payload)))
         if report_id == 2:
             signed = [v - 256 if v > 127 else v for v in payload[1:3]]
             self.reports.append((payload[0], *signed))
@@ -74,6 +81,174 @@ def make_touchpad():
     tp.contacts = {}
     tp.reset()
     return tp
+
+
+class FakeMouse:
+    """Stands in for an evdev InputDevice: read() hands out the events queued, or fails once unplugged."""
+    name = "Test Mouse"
+
+    def __init__(self):
+        self.queue, self.gone, self.closed = [], False, False
+
+    def push(self, *events):
+        self.queue.extend(InputEvent(0, 0, *ev) for ev in events)
+
+    def read(self):
+        if self.gone:
+            raise OSError(19, "No such device")
+        events, self.queue = self.queue, []
+        return events
+
+    def close(self):
+        self.closed = True
+
+
+class FakeFleet:
+    def connected(self):
+        return []
+
+
+def make_mouse_bridge(on_phone=True):
+    phone = FakePhone()
+    bridge = make_bridge(phone)
+    mouse = FakeMouse()
+    bridge.on_phone, bridge.fleet, bridge.devices = on_phone, FakeFleet(), {7: mouse}
+    bridge.held, bridge.toggle_pending, bridge.action_pending = set(), False, None
+    bridge.rel, bridge.rel_t, bridge.accels = [0, 0], 0.0, {}
+    return bridge, phone, mouse
+
+
+SYN = (e.EV_SYN, e.SYN_REPORT, 0)
+
+
+class MouseTest(unittest.TestCase):
+    def test_slow_motion_is_one_to_one_and_fast_motion_accelerates(self):
+        for counts, gain in ((2, 1.0), (400, inputs.MOUSE_ACCEL_MAX)):  # in one report: 0.35, 70 counts/ms
+            bridge, phone, mouse = make_mouse_bridge()
+            mouse.push((e.EV_REL, e.REL_X, counts), (e.EV_REL, e.REL_Y, -counts), SYN)
+            bridge.handle(7)
+            drain(bridge)
+            self.assertEqual(sum(x for _, x, _ in phone.reports), round(counts * gain))
+            self.assertEqual(sum(y for _, _, y in phone.reports), round(-counts * gain))
+
+    def test_acceleration_curve(self):
+        with mock.patch.multiple(inputs, MOUSE_ACCEL_SLOW=0.07, MOUSE_ACCEL_MAX=2.0):  # libinput's
+            self.assertAlmostEqual(Accel.gain(0.0), 0.3)  # creeping: finer than 1:1
+            self.assertAlmostEqual(Accel.gain(0.07), 1.0)  # no step
+            self.assertEqual(Accel.gain(inputs.MOUSE_ACCEL_THRESHOLD), 1.0)
+            self.assertEqual(Accel.gain(100.0), 2.0)
+            gains = [Accel.gain(v / 10) for v in range(30)]
+            self.assertEqual(gains, sorted(gains))  # faster never moves less
+        if config.MOUSE_ACCEL_MAX == 1.0 and config.MOUSE_ACCEL_SLOW == 0.0:  # acceleration off: 1:1
+            self.assertEqual({Accel.gain(v / 10) for v in range(300)}, {1.0})
+
+    def test_bursts_measure_the_same_speed(self):
+        """Bluetooth hands over reports in bursts: speed is measured over a window, not per report."""
+        steady, burst = Accel(), Accel()
+        t = 100.0
+        for i in range(10):
+            steady.frame = [8, 0]
+            sx, _ = steady.take(t + i * 0.008)
+            burst.frame = [8, 0]
+            bx, _ = burst.take(t + (i // 3) * 0.024)  # three at a time
+        self.assertAlmostEqual(sx, bx, delta=sx * 0.2)
+
+    def test_a_move_starts_at_full_speed(self):
+        """The first reports of a move are not taken for creeping (the pointer would lag behind)."""
+        accel = Accel()
+        accel.frame = [4, 0]  # 4 counts in one 8 ms report: 0.5 counts per ms, 1:1 or more
+        x, _ = accel.take(100.0)
+        self.assertGreaterEqual(x, 4)
+
+    def test_natural_mouse_scrolling_reverses_the_wheel(self):
+        for natural, wheel in ((False, 1), (True, 0xFF)):
+            with mock.patch.object(config, "MOUSE_NATURAL_SCROLL", natural):
+                bridge, phone, mouse = make_mouse_bridge()
+                mouse.push((e.EV_REL, e.REL_WHEEL, 1), SYN)
+                bridge.handle(7)
+                drain(bridge)
+                self.assertEqual([r[1][3] for r in phone.raw if r[0] == 2], [wheel])
+
+    def test_side_buttons_and_horizontal_wheel(self):
+        bridge, phone, mouse = make_mouse_bridge()
+        mouse.push((e.EV_KEY, e.BTN_SIDE, 1), SYN, (e.EV_KEY, e.BTN_SIDE, 0), SYN,
+                   (e.EV_KEY, e.BTN_EXTRA, 1), SYN, (e.EV_REL, e.REL_HWHEEL, -2), SYN)
+        bridge.handle(7)
+        drain(bridge)
+        buttons = [r[1][0] for r in phone.raw if r[0] == 2]
+        self.assertIn(0x08, buttons)
+        self.assertEqual(buttons[-1], 0x10)  # forward still held
+        self.assertIn(0xFE, [r[1][4] for r in phone.raw if r[0] == 2])  # AC Pan -2
+
+    def test_unplugged_mouse_lets_go_of_its_buttons(self):
+        bridge, phone, mouse = make_mouse_bridge()
+        mouse.push((e.EV_KEY, e.BTN_LEFT, 1), SYN)
+        bridge.handle(7)
+        mouse.gone = True
+        bridge.handle(7)
+        self.assertEqual(bridge.devices, {})
+        self.assertTrue(mouse.closed)
+        self.assertEqual(bridge.buttons, 0)
+        self.assertEqual(phone.raw[-1], (2, bytes(5)))
+
+    def test_pause_ends_a_push_against_the_edge(self):
+        bridge, _, mouse = make_mouse_bridge(on_phone=False)
+        bridge.handoff.push[("AA", "right")] = 3.0
+        bridge.rel_t = time.monotonic() - config.MOUSE_PAUSE_S - 0.1
+        mouse.push((e.EV_REL, e.REL_X, 40), SYN)
+        bridge.handle(7)
+        self.assertEqual(bridge.handoff.push, {})
+        bridge.handoff.push[("AA", "right")] = 3.0  # still moving: the push goes on
+        time.sleep(config.MOUSE_INTERVAL)
+        mouse.push((e.EV_REL, e.REL_X, 40), SYN)
+        bridge.handle(7)
+        self.assertEqual(bridge.handoff.push, {("AA", "right"): 3.0})
+
+
+class ScanInputs(unittest.TestCase):
+    def test_new_and_replaced_nodes_are_opened_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "event17")
+            open(path, "w").close()
+            opened = []
+
+            def input_device(p):
+                dev = mock.Mock(fd=len(opened) + 100, path=p)
+                dev.name = "Test Mouse"
+                dev.capabilities.return_value = {e.EV_REL: [e.REL_X, e.REL_Y]}
+                opened.append(dev)
+                return dev
+
+            seen = set()
+            with mock.patch.object(inputs.evdev, "list_devices", return_value=[path]), \
+                    mock.patch.object(inputs.evdev, "InputDevice", side_effect=input_device), \
+                    mock.patch.object(inputs, "log"):
+                self.assertEqual(list(inputs.scan_inputs(seen)), [100])
+                self.assertEqual(inputs.scan_inputs(seen), {})  # already open
+                # the mouse slept and came back: a new node at the same path (the old one kept
+                # aside, so the new one cannot get its inode)
+                os.rename(path, path + ".old")
+                open(path, "w").close()
+                self.assertEqual(list(inputs.scan_inputs(seen)), [101])
+            self.assertEqual(len(seen), 1)
+
+
+class PairedForms(unittest.TestCase):
+    """Only phones and tablets become devices to control: anything else paired would be dialed."""
+
+    def test_phones_tablets_and_others(self):
+        iphone = {"Class": 0x7A020C, "Icon": "phone", "Modalias": "bluetooth:v004Cp761Dd1B00",
+                  "Alias": "Someone's iPhone", "AddressType": "public"}
+        ipad = {"Class": 0x2C0114, "Icon": "computer", "Modalias": "bluetooth:v004Cp7213d1100",
+                "Alias": "iPad", "AddressType": "public"}
+        le_mouse = {"Icon": "input-mouse", "Modalias": "usb:v046DpB023d0015", "Alias": "MX Master 3",
+                    "AddressType": "random"}
+        headphones = {"Class": 0x240404, "Icon": "audio-headset", "Alias": "Headphones",
+                      "AddressType": "public"}
+        self.assertEqual(form_of(iphone), "phone")
+        self.assertEqual(form_of(ipad), "tablet")
+        self.assertIsNone(form_of(le_mouse))
+        self.assertIsNone(form_of(headphones))
 
 
 class ReportMap(unittest.TestCase):

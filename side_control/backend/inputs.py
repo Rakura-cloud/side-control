@@ -2,13 +2,24 @@
 """The PC's keyboard, mouse and touchpad: finding them, finger tracking, shake detection."""
 
 import math
+import os
 import time
 from collections import deque
 
 from evdev import ecodes as e
 import evdev
 
-from .config import SHAKE_MIN_MM, SHAKE_TURNS, SHAKE_WINDOW_S
+from .config import (
+    MOUSE_ACCEL_FIRST_S,
+    MOUSE_ACCEL_INCLINE,
+    MOUSE_ACCEL_MAX,
+    MOUSE_ACCEL_SLOW,
+    MOUSE_ACCEL_THRESHOLD,
+    MOUSE_ACCEL_WINDOW_S,
+    SHAKE_MIN_MM,
+    SHAKE_TURNS,
+    SHAKE_WINDOW_S,
+)
 from .events import log
 
 
@@ -98,20 +109,73 @@ class Shake:
         return False
 
 
+class Accel:
+    """Pointer acceleration for one mouse: collects a frame's motion, then scales it by how fast the
+    mouse moves."""
+
+    def __init__(self):
+        self.frame = [0, 0]  # counts since the last SYN
+        self.recent = deque()  # (time, counts) of the frames within MOUSE_ACCEL_WINDOW_S
+        self.start = 0.0  # when the mouse started moving
+
+    def take(self, now):
+        """The frame's motion, accelerated, as (x, y) floats; starts the next frame."""
+        (fx, fy), self.frame = self.frame, [0, 0]
+        if not self.recent or now - self.recent[-1][0] > MOUSE_ACCEL_WINDOW_S:
+            self.recent.clear()
+            self.start = now - MOUSE_ACCEL_FIRST_S
+        self.recent.append((now, math.hypot(fx, fy)))
+        while now - self.recent[0][0] > MOUSE_ACCEL_WINDOW_S:
+            self.recent.popleft()
+        # over the time it has been moving, not the whole window: the first reports of a move would
+        # read as creeping, and the pointer would lag behind the hand
+        span = min(MOUSE_ACCEL_WINDOW_S, now - self.start)
+        gain = self.gain(sum(d for _, d in self.recent) / (span * 1000))
+        return fx * gain, fy * gain
+
+    @staticmethod
+    def gain(v):
+        """libinput's linear profile: v in counts per ms."""
+        if v < MOUSE_ACCEL_SLOW:
+            return 10 * v + 0.3
+        return min(MOUSE_ACCEL_MAX, max(1.0, 1 + MOUSE_ACCEL_INCLINE * (v - MOUSE_ACCEL_THRESHOLD)))
+
+
 def is_touchpad(dev):
     caps = dev.capabilities(absinfo=False)
     return e.BTN_TOOL_FINGER in caps.get(e.EV_KEY, []) and e.ABS_X in caps.get(e.EV_ABS, [])
 
 
-def find_inputs():
-    found = {}
+def wanted(dev):
+    """A keyboard, mouse or touchpad: something to forward to the device in control."""
+    caps = dev.capabilities(absinfo=False)
+    return is_touchpad(dev) or e.REL_X in caps.get(e.EV_REL, []) or e.KEY_A in caps.get(e.EV_KEY, [])
+
+
+def scan_inputs(seen):
+    """Open the keyboards, mice and touchpads that appeared since the last call, as {fd: device}.
+
+    `seen` holds the nodes already looked at, kept or not, and is updated. A node is its path and
+    inode: a Bluetooth mouse that sleeps and reconnects gets a new node, maybe under the same path.
+    """
+    found, present = {}, set()
     for path in evdev.list_devices():
-        dev = evdev.InputDevice(path)
-        caps = dev.capabilities(absinfo=False)
-        keys = caps.get(e.EV_KEY, [])
-        if is_touchpad(dev) or e.REL_X in caps.get(e.EV_REL, []) or e.KEY_A in keys:
+        try:
+            node = path, os.stat(path).st_ino
+        except OSError:
+            continue
+        present.add(node)
+        if node in seen:
+            continue
+        try:
+            dev = evdev.InputDevice(path)  # reads its capabilities too
+        except OSError:  # gone again already: next time
+            continue
+        seen.add(node)
+        if wanted(dev):
             found[dev.fd] = dev
             log(f"input: {dev.name}")
         else:
             dev.close()
+    seen.intersection_update(present)
     return found

@@ -119,7 +119,9 @@ class Control:
                 self.bridge.switch_to(target)
         elif cmd == "set_handoff":
             # no phone_w / phone_h: the screen of the device's model, once it is known
-            phone = self.fleet.get(msg["address"])
+            phone = self.fleet.phones.get(msg["address"])
+            if phone is None:  # not a paired phone or tablet (an app that still lists a mouse)
+                return
             self.bridge.handoff.configure(phone, msg.get("zone"), msg.get("require_near", True),
                                           msg.get("phone_w"), msg.get("phone_h"),
                                           msg.get("speed"), msg.get("span"))
