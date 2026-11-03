@@ -115,13 +115,15 @@ def setup_bluez(adapter_name=None):
 
 
 def paired_devices(bus, adapter_path):
-    """Addresses of devices paired with this adapter; marks them trusted so they may reconnect."""
+    """Phones and tablets paired with this adapter; marks them trusted so they may reconnect. Other
+    paired devices (a Bluetooth mouse, headphones) are left out: they would be dialed as if they were
+    one, and paging them takes the radio away from them for seconds."""
     objects = dbus.Interface(bus.get_object("org.bluez", "/"),
                              "org.freedesktop.DBus.ObjectManager").GetManagedObjects()
     found = []
     for path, info in objects.items():
         dev = info.get("org.bluez.Device1")
-        if not dev or dev.get("Adapter") != adapter_path or not dev.get("Paired"):
+        if not dev or dev.get("Adapter") != adapter_path or not dev.get("Paired") or not form_of(dev):
             continue
         if not dev.get("Trusted"):
             dbus.Interface(bus.get_object("org.bluez", path),
@@ -139,6 +141,20 @@ def vendor_of(modalias):
         return None
 
 
+def form_of(dev):
+    """A BlueZ Device1's form from its class and icon: phone, tablet, or None for anything else. LE-only
+    devices (most recent mice and keyboards) have no class: HID here runs over BR/EDR anyway."""
+    cls = int(dev.get("Class", 0))
+    major, minor = (cls >> 8) & 0x1F, (cls >> 2) & 0x3F
+    icon, name = str(dev.get("Icon", "")), str(dev.get("Name", dev.get("Alias", "")))
+    apple = vendor_of(dev.get("Modalias", "")) == 0x004C or name.lower().startswith(("iphone", "ipad"))
+    if major == 2 or icon == "phone":
+        return "phone"
+    if (major == 1 and minor in (4, 5, 7)) or (apple and "ipad" in name.lower()):
+        return "tablet"
+    return None
+
+
 def nearby_devices(bus, adapter_path):
     """Unpaired phones and tablets found by discovery: [{address, name, os, form}]"""
     objects = dbus.Interface(bus.get_object("org.bluez", "/"),
@@ -148,16 +164,10 @@ def nearby_devices(bus, adapter_path):
         dev = info.get("org.bluez.Device1")
         if not dev or dev.get("Adapter") != adapter_path or dev.get("Paired") or "Name" not in dev:
             continue
-        cls = int(dev.get("Class", 0))
-        major, minor = (cls >> 8) & 0x1F, (cls >> 2) & 0x3F
-        icon, name = str(dev.get("Icon", "")), str(dev["Name"])
-        apple = vendor_of(dev.get("Modalias", "")) == 0x004C or name.lower().startswith(("iphone", "ipad"))
-        if major == 2 or icon == "phone":
-            form = "phone"
-        elif (major == 1 and minor in (4, 5, 7)) or (apple and "ipad" in name.lower()):
-            form = "tablet"
-        else:
+        form, name = form_of(dev), str(dev["Name"])
+        if not form:
             continue
+        apple = vendor_of(dev.get("Modalias", "")) == 0x004C or name.lower().startswith(("iphone", "ipad"))
         found.append({"address": str(dev["Address"]), "name": name, "form": form,
                       "os": ("iPadOS" if form == "tablet" else "iOS") if apple else "Android"})
     return sorted(found, key=lambda d: d["name"].lower())

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The paired iPhones, iPads and Android devices, and their HID connections."""
 
+import errno
 import fcntl
 import socket
 import struct
@@ -225,7 +226,10 @@ class Phone:
                 raise
             self.dial_fails = 0
             out.append((self, ctrl, intr))
-        except OSError:
+        except OSError as err:
+            if err.errno == errno.EBADE and not self.dial_fails:  # HCI "PIN or Key Missing"
+                log(f"{self.alias} no longer knows this computer (it was forgotten there): forget it in "
+                    "Side Control too and pair again")
             self.dial_fails += 1
             self.next_dial = time.monotonic() + min(RECONNECT_EVERY * 2 ** self.dial_fails,
                                                     DIAL_ONLY_MAX_S if config.DIAL_ONLY else 120)

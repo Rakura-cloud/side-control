@@ -13,13 +13,12 @@ from . import config
 from .bluez import paired_devices, setup_bluez
 from .bridge import Bridge
 from .compositor import Hyprland
-from .config import BATTERY_EVERY, MOUSE_INTERVAL, NAME, RECONNECT_EVERY, SOCK_PATH
+from .config import BATTERY_EVERY, INPUT_RESCAN_S, MOUSE_INTERVAL, NAME, RECONNECT_EVERY, SOCK_PATH
 from .control import Control
 from .devices import Fleet
 from .events import log
 from .handoff import Handoff
 from .hid import PSM_CTRL, PSM_INTR, listen
-from .inputs import find_inputs
 from .proximity import Proximity
 
 
@@ -52,7 +51,7 @@ def main():
             "-P input (side_control/data/bluetooth-no-input.conf)")
     fleet = Fleet(int(adapter_path.rsplit("hci", 1)[1]))
     fleet.sync_paired(paired_devices(bus, adapter_path))
-    bridge = Bridge(fleet, find_inputs())
+    bridge = Bridge(fleet)
     sys.setswitchinterval(0.001)  # the GLib thread (scan, panel) must not hold up pointer reports
     proximity = Proximity(bus, adapter_path)
     proximity.start()
@@ -61,7 +60,7 @@ def main():
     control = Control(bridge, fleet, proximity, bus, adapter_path)
     control.start()
     log(f'"{NAME}" is discoverable - pair each iPhone / iPad from its Bluetooth settings')
-    last_dial = 0.0
+    last_dial = last_scan = 0.0
 
     while True:
         now = time.monotonic()
@@ -73,6 +72,9 @@ def main():
             fleet.sync_paired(paired_devices(bus, adapter_path))
             if not bridge.on_phone:  # paging an absent device would disturb the active link
                 fleet.dial_missing()
+        if now - last_scan > INPUT_RESCAN_S:
+            last_scan = now
+            bridge.rescan()
         fleet.accept_dialed()
         owners = {}
         for phone in fleet.phones.values():

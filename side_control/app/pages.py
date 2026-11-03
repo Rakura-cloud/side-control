@@ -73,7 +73,9 @@ class PagesMixin:
                 ("shake_to_locate", "sc-ads-click-symbolic", "Shake to Locate",
                  "Briefly enlarge the cursor on whichever screen it’s on"),
                 ("tap_to_click", "sc-touch-app-symbolic", "Tap to Click on Device",
-                 "Touchpad taps become taps on the phone or tablet")):
+                 "Touchpad taps become taps on the phone or tablet"),
+                ("mouse_natural_scroll", "sc-mouse-symbolic", "Natural Mouse Scrolling",
+                 "The mouse wheel moves the content the other way on the device")):
             row = self.switch_row(key, title, subtitle, lambda k=key: self.send_option(k))
             row.add_prefix(Gtk.Image(icon_name=icon, pixel_size=20))
             gestures.add(row)

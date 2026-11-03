@@ -85,10 +85,14 @@ own Bluetooth input support or Side Control. **Settings → Own HID Profile** ch
 
 - **Off** (Bluetooth mice and keyboards work): Side Control connects to your devices itself, within
   10 to 30 seconds after they come in range.
-- **On:** your devices can also connect to Side Control by themselves, but Bluetooth mice and
+- **On:** your devices can also connect to Side Control by themselves, but classic Bluetooth mice and
   keyboards can't connect to this computer. It installs
   [`bluetooth-no-input.conf`](side_control/data/bluetooth-no-input.conf) as a drop-in for
   `bluetooth.service` (bluetoothd runs with `-P input`).
+
+Bluetooth LE mice and keyboards (most recent ones, e.g. Logitech MX) use another plugin and work either
+way. Mice and keyboards that connect after Side Control started, or reconnect after sleeping, are picked
+up within a second.
 
 ## Requirements
 
@@ -135,6 +139,11 @@ sudo pacman -S python python-gobject python-cairo python-dbus python-evdev gtk4 
 | <kbd>Ctrl</kbd> + pinch | Zoom in the app (<kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd>, e.g. Safari) |
 | Three fingers up | Home (mouse button 4, assign it in AssistiveTouch as above) |
 | Three fingers left/right | Previous / next device, the computer included |
+
+A mouse works on the device too, one to one (no acceleration; `MOUSE_ACCEL_*` in
+[`config.py`](side_control/backend/config.py) turn it on). Its wheel and tilt wheel scroll (**Natural
+Mouse Scrolling** turns them the other way), and its back / forward buttons are mouse buttons 4 and 5
+(assign them in AssistiveTouch as above).
 
 ## Known limitations
 

@@ -88,7 +88,9 @@ MODS = {
     e.KEY_LEFTCTRL: 0x01, e.KEY_LEFTSHIFT: 0x02, e.KEY_LEFTALT: 0x04, e.KEY_LEFTMETA: 0x08,
     e.KEY_RIGHTCTRL: 0x10, e.KEY_RIGHTSHIFT: 0x20, e.KEY_RIGHTALT: 0x40, e.KEY_RIGHTMETA: 0x80,
 }
-BUTTONS = {e.BTN_LEFT: 1, e.BTN_RIGHT: 2, e.BTN_MIDDLE: 4}
+# mouse side buttons (back / forward) are buttons 4 and 5, like Ctrl+Alt+H / C: AssistiveTouch can assign them
+BUTTONS = {e.BTN_LEFT: 1, e.BTN_RIGHT: 2, e.BTN_MIDDLE: 4, e.BTN_SIDE: 0x08, e.BTN_EXTRA: 0x10,
+           e.BTN_BACK: 0x08, e.BTN_FORWARD: 0x10}
 FINGERS = {e.BTN_TOOL_FINGER: 1, e.BTN_TOOL_DOUBLETAP: 2, e.BTN_TOOL_TRIPLETAP: 3,
            e.BTN_TOOL_QUADTAP: 4}
 
