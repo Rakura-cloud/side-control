@@ -17,6 +17,9 @@ except (ValueError, ImportError):
     Gtk4LayerShell = None
 
 
+GLOW_REACH = 4  # how many line thicknesses the glow's halo reaches into the screen
+
+
 class EdgeOverlay:
     """The on-screen edge indicator: thin lines (and device names) along the screen edges where the
     pointer crosses, drawn in click-through layer-shell surfaces over every monitor."""
@@ -25,14 +28,15 @@ class EdgeOverlay:
         self.windows = {}  # monitor -> (window, drawing area)
         self.segments = []  # [(edge, lo, hi, name)]
         self.mode, self.within, self.names = "near", 48, True
+        self.look = {"style": "solid", "thickness": 4, "opacity": 100, "color": None}
         self.cursor = None
         self.poll = None
         self.available = bool(Gtk4LayerShell and Gtk4LayerShell.is_supported())
         if self.available:
             Gdk.Display.get_default().get_monitors().connect("items-changed", lambda *_: self.sync())
 
-    def update(self, segments, mode, within, names):
-        self.segments, self.mode, self.within, self.names = segments, mode, within, names
+    def update(self, segments, mode, within, names, look):
+        self.segments, self.mode, self.within, self.names, self.look = segments, mode, within, names, look
         self.sync()
 
     def sync(self):
@@ -95,9 +99,13 @@ class EdgeOverlay:
     def _draw(self, area, cr, w, h, monitor):
         geo = monitor.get_geometry()
         left, top, right, bottom = self._box()
-        found, accent = area.get_style_context().lookup_color("accent_bg_color")
-        if not found:
-            accent = Gdk.RGBA(red=0.21, green=0.52, blue=0.89, alpha=1)
+        accent = Gdk.RGBA()
+        if not (self.look["color"] and accent.parse(self.look["color"])):
+            found, accent = area.get_style_context().lookup_color("accent_bg_color")
+            if not found:
+                accent = Gdk.RGBA(red=0.21, green=0.52, blue=0.89, alpha=1)
+        thick = self.look["thickness"]
+        depth = thick * GLOW_REACH if self.look["style"] == "glow" else thick
         for edge, lo, hi, name in self.segments:
             vert = edge in ("left", "right")
             on_edge = {"left": geo.x == left, "right": geo.x + geo.width == right,
@@ -110,7 +118,7 @@ class EdgeOverlay:
             s0, s1 = max(g0, m0), min(g1, m1)
             if s1 <= s0:
                 continue
-            alpha = 1.0
+            alpha = self.look["opacity"] / 100
             if self.mode == "near":
                 if self.cursor is None:
                     continue
@@ -120,17 +128,44 @@ class EdgeOverlay:
                 dist = math.hypot(max(0.0, across), max(0.0, g0 - along, along - g1))
                 if dist > self.within:
                     continue
-                alpha = 1.0 - 0.7 * dist / max(1, self.within)
+                alpha *= 1.0 - 0.7 * dist / max(1, self.within)
             p0, p1 = s0 - m0, s1 - m0  # monitor-local
             if vert:
-                rect = (0 if edge == "left" else w - 4, p0, 4, p1 - p0)
+                rect = (0 if edge == "left" else w - depth, p0, depth, p1 - p0)
             else:
-                rect = (p0, 0 if edge == "top" else h - 4, p1 - p0, 4)
-            cr.set_source_rgba(accent.red, accent.green, accent.blue, alpha)
-            cr.rectangle(*rect)
-            cr.fill()
+                rect = (p0, 0 if edge == "top" else h - depth, p1 - p0, depth)
+            self._line(cr, edge, rect, thick, alpha, accent)
             if self.names and name:
                 self._label(area, cr, name, edge, rect, w, h, alpha, accent)
+
+    def _line(self, cr, edge, rect, thick, alpha, accent):
+        x, y, rw, rh = rect
+        vert = edge in ("left", "right")
+        style = self.look["style"]
+        if style == "glow":  # a bright core with a halo fading into the screen
+            far = {"left": (x + rw, y), "right": (x, y), "top": (x, y + rh), "bottom": (x, y)}[edge]
+            near = {"left": (x, y), "right": (x + rw, y), "top": (x, y), "bottom": (x, y + rh)}[edge]
+            fade = cairo.LinearGradient(*near, *far)
+            fade.add_color_stop_rgba(0, accent.red, accent.green, accent.blue, alpha)
+            fade.add_color_stop_rgba(1, accent.red, accent.green, accent.blue, 0)
+            cr.set_source(fade)
+            cr.rectangle(*rect)
+            cr.fill()
+            core = (x if edge != "right" else x + rw - thick, y, thick, rh) if vert else \
+                   (x, y if edge != "bottom" else y + rh - thick, rw, thick)
+            cr.set_source_rgba(accent.red, accent.green, accent.blue, alpha)
+            cr.rectangle(*core)
+            cr.fill()
+        else:
+            r = min(thick / 2, rw / 2, rh / 2)
+            cr.new_sub_path()
+            cr.arc(x + rw - r, y + r, r, -math.pi / 2, 0)
+            cr.arc(x + rw - r, y + rh - r, r, 0, math.pi / 2)
+            cr.arc(x + r, y + rh - r, r, math.pi / 2, math.pi)
+            cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+            cr.close_path()
+            cr.set_source_rgba(accent.red, accent.green, accent.blue, alpha)
+            cr.fill()
 
     @staticmethod
     def _label(area, cr, text, edge, rect, w, h, alpha, accent):
@@ -140,8 +175,9 @@ class EdgeOverlay:
         pad_x, pad_y = 8, 3
         bw, bh = tw + 2 * pad_x, th + 2 * pad_y
         x, y, rw, rh = rect
-        bx = {"left": 10, "right": w - 10 - bw}.get(edge, x + rw / 2 - bw / 2)
-        by = {"top": 10, "bottom": h - 10 - bh}.get(edge, y + rh / 2 - bh / 2)
+        gap = 6 + (rw if edge in ("left", "right") else rh)  # clear of the line
+        bx = {"left": gap, "right": w - gap - bw}.get(edge, x + rw / 2 - bw / 2)
+        by = {"top": gap, "bottom": h - gap - bh}.get(edge, y + rh / 2 - bh / 2)
         bx, by = max(4, min(w - bw - 4, bx)), max(4, min(h - bh - 4, by))
         r = bh / 2
         cr.new_sub_path()

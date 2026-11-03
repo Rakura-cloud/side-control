@@ -3,11 +3,11 @@
 
 import os
 
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gdk, Gtk
 
 from .arrangement import ArrangementView
 from .. import VERSION
-from .config import AUTOSTART_PATH, ISSUES_URL, save_settings, set_autostart
+from .config import AUTOSTART_PATH, INDICATOR_STYLES, ISSUES_URL, save_settings, set_autostart
 
 
 SHORTCUTS = [("Toggle Cursor Sharing", "<Super><Shift>s"), ("Send Cursor to Next Device", "<Super>Right"),
@@ -16,6 +16,7 @@ SHORTCUTS = [("Toggle Cursor Sharing", "<Super><Shift>s"), ("Send Cursor to Next
 INDICATORS = [("always", "Always Visible", "A thin line stays on every connected edge"),
               ("near", "When Cursor Is Near", "The edge lights up as the cursor approaches"),
               ("never", "Hidden", "No indicator; just push past the edge")]
+
 class PagesMixin:
     """Builds the pages; part of Window."""
 
@@ -107,7 +108,65 @@ class PagesMixin:
         options.add(self.switch_row("indicator_names", "Show Device Name",
                                     "Label the indicator with the device it leads to", self.update_overlay))
         page.add(options)
+
+        self.look_group = Adw.PreferencesGroup()
+        self.look_group.set_sensitive(self.settings["indicator"] != "never")
+        styles = list(INDICATOR_STYLES)
+        style_row = Adw.ComboRow(title="Style", model=Gtk.StringList.new(styles), use_subtitle=True)
+        if self.settings["indicator_style"] in styles:
+            style_row.set_selected(styles.index(self.settings["indicator_style"]))
+        style_row.connect("notify::selected", lambda row, _p: self.on_style(styles[row.get_selected()]))
+        self.look_group.add(style_row)
+        self.look_group.add(self._color_row())
+        page.add(self.look_group)
         return page
+
+    def _color_row(self):
+        self.color_button = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False), valign=Gtk.Align.CENTER)
+        self.color_reset = Gtk.Button(label="Reset", valign=Gtk.Align.CENTER, css_classes=["flat"],
+                                      tooltip_text="Follow the system accent colour")
+        row = Adw.ActionRow(title="Colour")
+        row.add_suffix(self.color_reset)
+        row.add_suffix(self.color_button)
+        self.color_row = row
+        self.color_button.connect("notify::rgba", self.on_color)
+        self.show_color()
+        self.color_reset.connect("clicked", self.on_color_reset)
+        Adw.StyleManager.get_default().connect("notify::accent-color-rgba", lambda *_: self.show_color())
+        return row
+
+    def show_color(self):
+        """Put the colour in the button and the row's wording: the custom one, or the system accent."""
+        color = self.settings["indicator_color"]
+        rgba = Gdk.RGBA()
+        if not (color and rgba.parse(color)):
+            color = None
+            rgba = Adw.StyleManager.get_default().get_accent_color_rgba()
+        self.color_row.set_subtitle("Custom" if color else "System accent")
+        self.color_reset.set_visible(bool(color))
+        self.showing_color = True
+        self.color_button.set_rgba(rgba)
+        self.showing_color = False
+
+    def on_color(self, button, _pspec):
+        if self.showing_color:
+            return
+        rgba = button.get_rgba()
+        self.settings["indicator_color"] = "#%02x%02x%02x" % tuple(round(c * 255) for c in (rgba.red, rgba.green, rgba.blue))
+        save_settings(self.settings)
+        self.show_color()
+        self.update_overlay()
+
+    def on_color_reset(self, _button):
+        self.settings["indicator_color"] = None
+        save_settings(self.settings)
+        self.show_color()
+        self.update_overlay()
+
+    def on_style(self, style):
+        self.settings["indicator_style"] = style
+        save_settings(self.settings)
+        self.update_overlay()
 
     def _settings_page(self):
         page = Adw.PreferencesPage()
@@ -201,6 +260,7 @@ class PagesMixin:
             self.settings["indicator"] = key
             save_settings(self.settings)
             self.within_row.set_sensitive(key == "near")
+            self.look_group.set_sensitive(key != "never")
             self.update_overlay()
 
     def on_login(self, row, _pspec):

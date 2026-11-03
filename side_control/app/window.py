@@ -14,6 +14,7 @@ from .config import (
     BACKEND_OPTIONS,
     CSS_PATH,
     DEVICE_DEFAULTS,
+    INDICATOR_STYLES,
     ICONS_DIR,
    
     load_settings,
@@ -280,7 +281,12 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
                     name = self.devs[address]["name"]
                     segments += [(*seg, name) for seg in edge_segments(cfg["edge"], self.spans.get(address))]
         self.overlay.update(segments, self.settings["indicator"], self.settings["indicator_within"],
-                            self.settings["indicator_names"])
+                            self.settings["indicator_names"], self.indicator_look())
+
+    def indicator_look(self):
+        style, thickness, opacity = INDICATOR_STYLES.get(self.settings["indicator_style"],
+                                                          INDICATOR_STYLES["Standard"])
+        return {"style": style, "thickness": thickness, "opacity": opacity, "color": self.settings["indicator_color"]}
 
     def send_options(self):
         options = {k: self.settings[k] for k in BACKEND_OPTIONS}
