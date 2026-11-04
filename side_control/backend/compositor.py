@@ -7,6 +7,8 @@ import os
 import socket
 import time
 
+from .config import CURSOR_MARK
+
 
 class Hyprland:
     """Pointer position and warping through Hyprland's IPC socket (the only compositor supported)."""
@@ -17,6 +19,7 @@ class Hyprland:
         self.path = None
         self.box = None
         self.box_t = 0.0
+        self.hidden = os.path.exists(CURSOR_MARK)  # a backend that was killed left it hidden
 
     def socket_path(self):
         if self.path and os.path.exists(self.path):
@@ -75,3 +78,31 @@ class Hyprland:
         reply = self.request(f"dispatch hl.dsp.cursor.move({{x={x:.0f},y={y:.0f}}})")
         if not (reply or "").startswith("ok"):
             self.request(f"dispatch movecursor {x:.0f} {y:.0f}")  # Hyprland before the Lua API
+
+    def set_invisible(self, invisible):
+        value = "true" if invisible else "false"
+        reply = self.request(f"eval hl.config({{cursor = {{invisible = {value}}}}})")
+        if not (reply or "").startswith("ok"):
+            reply = self.request(f"keyword cursor:invisible {value}")  # Hyprland before the Lua config
+        return (reply or "").startswith("ok")
+
+    def hide_cursor(self, hide):
+        """Hide the pointer on every monitor, or show it again. Only a pointer hidden here is shown again,
+        and CURSOR_MARK remembers it was, so a backend killed meanwhile shows it on its next start."""
+        if hide == self.hidden:
+            return
+        if hide:
+            try:
+                option = json.loads(self.request("j/getoption cursor:invisible"))
+                if option.get("bool", option.get("int")):  # the user's own setting: leave it alone
+                    return
+            except (TypeError, ValueError, AttributeError):
+                return
+            if not self.set_invisible(True):
+                return
+            open(CURSOR_MARK, "w").close()
+        else:
+            self.set_invisible(False)
+            if os.path.exists(CURSOR_MARK):
+                os.unlink(CURSOR_MARK)
+        self.hidden = hide

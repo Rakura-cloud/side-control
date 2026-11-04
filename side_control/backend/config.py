@@ -111,6 +111,8 @@ MOUSE_PAUSE_S = 0.3     # a mouse at rest this long ends a push against the edge
 CALIBRATE_RATE = 250    # counts per second while measuring a screen edge to edge
 CALIBRATE_REACTION_S = 0.15  # subtract this much sweep: the time you need to press Stop
 CALIBRATE_MAX_S = 25
+HIDE_CURSOR = True      # hide the PC pointer while a device has control: it would sit at the edge, visible
+CURSOR_MARK = "/run/side-control-cursor-hidden"  # exists while the PC pointer is hidden by us
 SCAN_WHILE_CONTROLLING = False  # keep the LE proximity scan on while a device has control? It shares the
                                 # radio with the HID link, so it is paused for smoother pointer movement
 
@@ -119,6 +121,6 @@ SOCK_PATH = os.environ.get("SIDE_CONTROL_SOCK", "/run/side-control.sock")  # GUI
 OPTIONS = {"natural_scroll": ("NATURAL_SCROLL", bool), "mouse_natural_scroll": ("MOUSE_NATURAL_SCROLL", bool),
            "tap_to_click": ("TAP_TO_CLICK", bool),
            "share_cursor": ("SHARE_CURSOR", bool), "three_finger_switch": ("THREE_FINGER_SWITCH", bool),
-           "shake_to_locate": ("SHAKE_TO_LOCATE", bool),
+           "shake_to_locate": ("SHAKE_TO_LOCATE", bool), "hide_cursor": ("HIDE_CURSOR", bool),
            "swipe_flick": ("SWIPE_FLICK", bool), "swipe_up_home": ("SWIPE_UP_HOME", bool),
            "switch_delay_ms": ("SWITCH_DELAY_S", lambda ms: max(0.0, min(2.0, float(ms) / 1000)))}

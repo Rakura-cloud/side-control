@@ -119,6 +119,12 @@ class PagesMixin:
         self.look_group.add(style_row)
         self.look_group.add(self._color_row())
         page.add(self.look_group)
+
+        cursor = Adw.PreferencesGroup(title="Cursor")
+        cursor.add(self.switch_row("hide_cursor", "Hide While on a Device",
+                                   "The computer's cursor disappears until it comes back",
+                                   lambda: self.send_option("hide_cursor")))
+        page.add(cursor)
         return page
 
     def _color_row(self):

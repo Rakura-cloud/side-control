@@ -138,6 +138,8 @@ class Control:
                 self.set_adapter("Discoverable", dbus.Boolean(bool(msg["discoverable"])))
             if "locked" in msg:
                 self.bridge.locked = bool(msg["locked"])
+            if "hide_cursor" in msg:
+                self.bridge.handoff.sync_cursor()
             log("options: " + ", ".join(f"{k}={v}" for k, v in msg.items() if k != "cmd"))
         elif cmd == "discover":
             self.discovering = bool(msg.get("on"))

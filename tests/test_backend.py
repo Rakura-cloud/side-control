@@ -15,6 +15,7 @@ from side_control.backend.handoff import Handoff, handoff_exits  # noqa: E402
 from side_control.backend.hid import REPORT_MAP  # noqa: E402
 from side_control.backend import inputs  # noqa: E402
 from side_control.backend.bluez import form_of  # noqa: E402
+from side_control.backend.compositor import Hyprland  # noqa: E402
 from side_control.backend.inputs import Accel, Touchpad  # noqa: E402
 from evdev import InputEvent, ecodes as e  # noqa: E402
 
@@ -47,12 +48,16 @@ class FakeCompositor:
 
     def __init__(self):
         self.warped = None
+        self.hidden = False
 
     def layout(self):
         return (0, 0, 1920, 1080)
 
     def warp(self, x, y):
         self.warped = (x, y)
+
+    def hide_cursor(self, hide):
+        self.hidden = hide
 
 
 def make_bridge(phone):
@@ -309,11 +314,70 @@ class HandoffTest(unittest.TestCase):
         self.assertFalse(bridge.on_phone)
         self.assertAlmostEqual(h.comp.warped[1], 0.8 * 1080, delta=2)
 
+    def test_cursor_hidden_while_on_device(self):
+        bridge = make_bridge(FakePhone())
+        h = bridge.handoff
+        h.edge = "right"
+        h.on_enter()
+        self.assertTrue(h.comp.hidden)
+        bridge.on_phone = False
+        h.on_leave()
+        self.assertFalse(h.comp.hidden)
+        bridge.on_phone = True
+        with mock.patch.object(config, "HIDE_CURSOR", False):
+            h.on_enter()
+        self.assertFalse(h.comp.hidden)
+
     def test_exit_spans(self):
         (edge, inside), = handoff_exits("left", (0.2, 0.6))
         self.assertEqual(edge, "left")
         self.assertTrue(inside(0.4))
         self.assertFalse(inside(0.7))
+
+
+class HideCursor(unittest.TestCase):
+    """Hyprland.hide_cursor against a fake IPC socket: only a pointer it hid is shown again."""
+
+    def make(self, user_invisible=False, mark_exists=False):
+        self.mark = os.path.join(tempfile.mkdtemp(), "hidden")
+        if mark_exists:
+            open(self.mark, "w").close()
+        self.sent = []
+
+        def request(command):
+            self.sent.append(command)
+            if command == "j/getoption cursor:invisible":
+                return '{"option": "cursor:invisible", "bool": %s, "set": false}' % str(user_invisible).lower()
+            return "ok"
+        with mock.patch("side_control.backend.compositor.CURSOR_MARK", self.mark):
+            comp = Hyprland()
+        comp.request = request
+        return comp
+
+    def hide_cursor(self, comp, hide):
+        with mock.patch("side_control.backend.compositor.CURSOR_MARK", self.mark):
+            comp.hide_cursor(hide)
+
+    def test_hides_and_shows(self):
+        comp = self.make()
+        self.hide_cursor(comp, True)
+        self.assertTrue(comp.hidden and os.path.exists(self.mark))
+        self.assertIn("eval hl.config({cursor = {invisible = true}})", self.sent)
+        self.hide_cursor(comp, False)
+        self.assertFalse(comp.hidden or os.path.exists(self.mark))
+        self.assertEqual(self.sent[-1], "eval hl.config({cursor = {invisible = false}})")
+
+    def test_leaves_the_users_own_setting(self):
+        comp = self.make(user_invisible=True)
+        self.hide_cursor(comp, True)
+        self.hide_cursor(comp, False)
+        self.assertEqual(self.sent, ["j/getoption cursor:invisible"])
+
+    def test_shows_a_pointer_a_killed_backend_hid(self):
+        comp = self.make(mark_exists=True)
+        self.hide_cursor(comp, False)
+        self.assertEqual(self.sent, ["eval hl.config({cursor = {invisible = false}})"])
+        self.assertFalse(os.path.exists(self.mark))
 
 
 class SwipeFlick(unittest.TestCase):

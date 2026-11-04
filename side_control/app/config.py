@@ -34,7 +34,7 @@ DEFAULTS = {"share_cursor": True, "share_clipboard": True, "switch_delay_ms": 15
             "match_speed": True, "three_finger_switch": True, "shake_to_locate": False, "tap_to_click": True,
             "mouse_natural_scroll": False,
             "indicator": "near", "indicator_within": 48, "indicator_names": True,
-            "indicator_style": "Standard", "indicator_color": None,
+            "indicator_style": "Standard", "indicator_color": None, "hide_cursor": True,
             "run_in_background": True, "visible": False, "device_name": None, "adapter": None,
             "hid_banner_dismissed": False}
 # The edge indicator's styles: name -> (shape, thickness in px, opacity in %).
@@ -42,7 +42,7 @@ INDICATOR_STYLES = {"Subtle": ("solid", 2, 60), "Standard": ("solid", 4, 100), "
                     "Glow": ("glow", 6, 90)}
 DEVICE_DEFAULTS = {"enabled": True, "edge": None, "x": None, "y": None}
 BACKEND_OPTIONS = ("share_cursor", "switch_delay_ms", "three_finger_switch", "shake_to_locate", "tap_to_click",
-                   "mouse_natural_scroll")
+                   "mouse_natural_scroll", "hide_cursor")
 
 
 
