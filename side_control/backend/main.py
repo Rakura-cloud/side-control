@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Starts everything and runs the event loop."""
 
+import atexit
 import os
 import select
+import signal
 import socket
 import sys
 import time
@@ -56,7 +58,13 @@ def main():
     proximity = Proximity(bus, adapter_path)
     proximity.start()
     bridge.proximity = proximity
-    bridge.handoff = Handoff(bridge, fleet, proximity, Hyprland())
+    compositor = Hyprland()
+    compositor.hide_cursor(False)  # hidden by a backend that was killed
+    atexit.register(compositor.hide_cursor, False)
+    # pkill / a closed terminal: exit through atexit, so the pointer is shown again
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, lambda *_: sys.exit(0))
+    bridge.handoff = Handoff(bridge, fleet, proximity, compositor)
     control = Control(bridge, fleet, proximity, bus, adapter_path)
     control.start()
     log(f'"{NAME}" is discoverable - pair each iPhone / iPad from its Bluetooth settings')

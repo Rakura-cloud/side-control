@@ -148,6 +148,7 @@ class Handoff:
 
     def on_enter(self):
         """Called by Bridge.switch_to when a device takes over: pin its pointer where it comes in."""
+        self.sync_cursor()
         phone = self.bridge.phone
         if not phone.zone:
             return
@@ -214,3 +215,8 @@ class Handoff:
     def on_leave(self):
         self.edge = None
         self.push.clear()
+        self.sync_cursor()  # before leave() warps the pointer back
+
+    def sync_cursor(self):
+        """The PC pointer is hidden while a device has control (if HIDE_CURSOR), shown otherwise."""
+        self.comp.hide_cursor(self.bridge.on_phone and config.HIDE_CURSOR)

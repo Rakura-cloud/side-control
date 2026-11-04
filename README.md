@@ -31,6 +31,8 @@ the phone or tablet: it sees an ordinary Bluetooth keyboard and mouse.
 - **Keyboard shortcuts.** Send the cursor to the next device or back, lock it to the current screen,
   turn sharing on and off.
 - **Edge indicator.** A line on your screen edge shows where each device is reached. Choose its style (Subtle, Standard, Bold, Glow) and colour.
+- **Cursor out of the way.** While a device has control, the computer's cursor is hidden (Hyprland); it
+  comes back where you return. Turn it off in Appearance.
 - **Tray icon.** Shows where the cursor is and switches between devices (StatusNotifierItem, e.g. Waybar).
 - **Pairing and device info.** Pair from the app; see each device's OS version and battery.
 
