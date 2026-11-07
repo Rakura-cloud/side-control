@@ -5,13 +5,15 @@ the app does.
 
 ## Layout
 
-Two programs in one package, `side_control/`, sharing only `side_control/__init__.py` (`VERSION`).
+Two programs in one package, `side_control/`, sharing only `side_control/__init__.py` (`VERSION`) and
+`side_control/monitors.py` (the monitors' outer edges, used by hand-off and the edge indicator alike).
 
 | Path | What it is |
 |---|---|
 | `side-control`, `side-control-backend` | Launchers: put the checkout on `sys.path` and run `side_control.app` / `side_control.backend`. Files, not `python -m`, because `pkexec` starts programs in another directory. |
 | `side_control/app/` | The GTK 4 / libadwaita app. Runs as the user. |
 | `side_control/backend/` | The root backend: Bluetooth HID keyboard + mouse, input, hand-off, gestures. |
+| `side_control/monitors.py` | Outer edges of the monitor layout and positions along them. No GTK, no compositor. |
 | `side_control/data/` | Icons (app icons and Material Symbols Rounded as `sc-*-symbolic.svg`) and `bluetooth-no-input.conf`, the systemd drop-in for "Own HID Profile". |
 | `tests/` | Tests that need no Bluetooth, input devices, display or root. |
 | `tools/screenshots.py`, `tools/screenshots.sh` | Render every page against a fake backend (headless with the `.sh`). |
@@ -49,7 +51,7 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 | `gatt.py` | Model, OS and battery from GATT over BR/EDR. |
 | `devices.py` | `Phone` (one device and its connection), `Fleet`, screen sizes per model. |
 | `proximity.py` | Signal strength from LE advertisements. |
-| `compositor.py` | `Hyprland`: where the PC pointer is, moving it. |
+| `compositor.py` | `Hyprland`: where the PC pointer is, the monitors, moving it. |
 | `handoff.py` | `Handoff`: edge hand-off and the model of the device pointer. |
 | `inputs.py` | Finding input devices, `Touchpad` finger tracking, `Shake`. |
 | `bridge.py` | `Bridge`: routes keyboard and touchpad to the device in control; gestures and mouse reports. |

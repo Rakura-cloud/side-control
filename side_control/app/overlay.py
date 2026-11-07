@@ -8,6 +8,7 @@ import cairo
 import gi
 from gi.repository import GLib, Gdk, Gtk, Pango, PangoCairo
 
+from ..monitors import outer_edges, pieces
 from .system import hyprland
 
 try:  # optional: without it there is no edge indicator
@@ -91,14 +92,18 @@ class EdgeOverlay:
         return GLib.SOURCE_CONTINUE
 
     @staticmethod
-    def _box():
-        rects = [m.get_geometry() for m in Gdk.Display.get_default().get_monitors()]
-        left, top = min(r.x for r in rects), min(r.y for r in rects)
-        return left, top, max(r.x + r.width for r in rects), max(r.y + r.height for r in rects)
+    def _edges(monitors):
+        rects = []
+        for m in monitors:
+            r = m.get_geometry()
+            rects.append((r.x, r.y, r.x + r.width, r.y + r.height))
+        return outer_edges(rects)
 
     def _draw(self, area, cr, w, h, monitor):
-        geo = monitor.get_geometry()
-        left, top, right, bottom = self._box()
+        monitors = list(Gdk.Display.get_default().get_monitors())
+        if monitor not in monitors:
+            return
+        index, geo, edges = monitors.index(monitor), monitor.get_geometry(), self._edges(monitors)
         accent = Gdk.RGBA()
         if not (self.look["color"] and accent.parse(self.look["color"])):
             found, accent = area.get_style_context().lookup_color("accent_bg_color")
@@ -108,35 +113,30 @@ class EdgeOverlay:
         depth = thick * GLOW_REACH if self.look["style"] == "glow" else thick
         for edge, lo, hi, name in self.segments:
             vert = edge in ("left", "right")
-            on_edge = {"left": geo.x == left, "right": geo.x + geo.width == right,
-                       "top": geo.y == top, "bottom": geo.y + geo.height == bottom}[edge]
-            if not on_edge:
-                continue
-            a0, a1 = (top, bottom) if vert else (left, right)
-            g0, g1 = a0 + lo * (a1 - a0), a0 + hi * (a1 - a0)  # the segment, in global coordinates
-            m0, m1 = (geo.y, geo.y + geo.height) if vert else (geo.x, geo.x + geo.width)
-            s0, s1 = max(g0, m0), min(g1, m1)
-            if s1 <= s0:
-                continue
-            alpha = self.look["opacity"] / 100
-            if self.mode == "near":
-                if self.cursor is None:
+            m0 = geo.y if vert else geo.x
+            for fixed, s0, s1, i in pieces(edges[edge], lo, hi):  # global coordinates
+                if i != index:
                     continue
-                cx, cy = self.cursor
-                across = {"left": cx - left, "right": right - 1 - cx, "top": cy - top, "bottom": bottom - 1 - cy}[edge]
-                along = cy if vert else cx
-                dist = math.hypot(max(0.0, across), max(0.0, g0 - along, along - g1))
-                if dist > self.within:
-                    continue
-                alpha *= 1.0 - 0.7 * dist / max(1, self.within)
-            p0, p1 = s0 - m0, s1 - m0  # monitor-local
-            if vert:
-                rect = (0 if edge == "left" else w - depth, p0, depth, p1 - p0)
-            else:
-                rect = (p0, 0 if edge == "top" else h - depth, p1 - p0, depth)
-            self._line(cr, edge, rect, thick, alpha, accent)
-            if self.names and name:
-                self._label(area, cr, name, edge, rect, w, h, alpha, accent)
+                alpha = self.look["opacity"] / 100
+                if self.mode == "near":
+                    if self.cursor is None:
+                        continue
+                    cx, cy = self.cursor
+                    across = {"left": cx - fixed, "right": fixed - 1 - cx,
+                              "top": cy - fixed, "bottom": fixed - 1 - cy}[edge]
+                    along = cy if vert else cx
+                    dist = math.hypot(across, max(0.0, s0 - along, along - s1))
+                    if across < 0 or dist > self.within:  # across < 0: beyond the edge, on another monitor
+                        continue
+                    alpha *= 1.0 - 0.7 * dist / max(1, self.within)
+                p0, p1 = s0 - m0, s1 - m0  # monitor-local
+                if vert:
+                    rect = (0 if edge == "left" else w - depth, p0, depth, p1 - p0)
+                else:
+                    rect = (p0, 0 if edge == "top" else h - depth, p1 - p0, depth)
+                self._line(cr, edge, rect, thick, alpha, accent)
+                if self.names and name:
+                    self._label(area, cr, name, edge, rect, w, h, alpha, accent)
 
     def _line(self, cr, edge, rect, thick, alpha, accent):
         x, y, rw, rh = rect

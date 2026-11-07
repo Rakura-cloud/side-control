@@ -23,7 +23,8 @@ the phone or tablet: it sees an ordinary Bluetooth keyboard and mouse.
 ## Features
 
 - **Edge hand-off.** Arrange your devices around your screen; the cursor crosses where you put them,
-  entering at the same height it left, and comes back the same way.
+  entering at the same height it left, and comes back the same way. With several monitors, a side
+  means the outer edges of every monitor on that side; edges between two monitors never hand off.
 - **Keyboard and touchpad on the device.** Typing, clicks, tap to click, two-finger scrolling, and
   two-finger left/right swipes that turn the page (Photos, the Home Screen, ...).
 - **Gestures.** Three-finger swipe left/right jumps between your computer and devices; three-finger
