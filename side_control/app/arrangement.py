@@ -65,6 +65,8 @@ class ArrangementView(Gtk.Fixed):
         geos = [m.get_geometry() for m in monitors]
         rects = [(g.x, g.y, g.x + g.width, g.y + g.height) for g in geos]
         self.layout = Screen(rects)
+        self.set_size_request(CANVAS_W, self.layout.height)
+        self.move(self.empty, 0, self.layout.height - 34)
         self.screen.set_visible(len(monitors) == 1)
         resolution = lambda m, g: f"{round(g.width * m.get_scale())} × {round(g.height * m.get_scale())}"  # noqa: E731
         if len(monitors) == 1:
@@ -155,7 +157,7 @@ class ArrangementView(Gtk.Fixed):
             return
         w, h = TILE[tile.form]
         tile.cfg["x"] = max(0, min(CANVAS_W - w, tile.start[0] + dx))
-        tile.cfg["y"] = max(0, min(CANVAS_H - h, tile.start[1] + dy))
+        tile.cfg["y"] = max(0, min(self.layout.height - h, tile.start[1] + dy))
         self.move(tile, tile.cfg["x"], tile.cfg["y"])
 
     def on_drag_end(self, _gesture, _dx, _dy):

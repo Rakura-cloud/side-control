@@ -11,10 +11,13 @@ OPPOSITE = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
 # Arrangement canvas, in canvas pixels: this computer's screen in the middle, devices around it
 CANVAS_W, CANVAS_H = 640, 340
 SX, SY, SW, SH = 210, 102, 220, 136  # one monitor: the design's screen
-MAX_W = 400  # several monitors: drawn at one scale, at most this wide (room for a tablet either side)...
-MAX_H = SH   # ...and this high, centred where the one screen would be
 TILE = {"phone": (46, 86), "tablet": (100, 70)}
 GAP = 6
+# Several monitors: a taller canvas, so they are drawn big enough next to the device tiles; they fit
+# in it at one scale with room for a tablet beside and a phone above and below
+MULTI_H = 440
+MAX_W = CANVAS_W - 2 * (TILE["tablet"][0] + GAP + 8)
+MAX_H = MULTI_H - 2 * (TILE["phone"][1] + GAP + 8)
 CORNER_FRAC = 0.3  # same as the backend's: a corner zone covers this fraction of each edge
 DEAD_PX = 6        # "Corner Dead Zones": side zones stop this far short of the screen corners
 BASE_SCREEN = 400 * 860  # iPhone screen in mouse counts: "Match Pointer Speed" scales others to it
@@ -41,6 +44,7 @@ class Screen:
 
     def __init__(self, rects=None):
         rects = list(rects or [])
+        self.height = CANVAS_H if len(rects) < 2 else MULTI_H  # of the canvas
         if len(rects) < 2:
             rects = [(SX, SY, SX + SW, SY + SH)]
             to_x = to_y = lambda v: v  # noqa: E731
@@ -48,7 +52,7 @@ class Screen:
             left, top = min(r[0] for r in rects), min(r[1] for r in rects)
             w, h = max(r[2] for r in rects) - left, max(r[3] for r in rects) - top
             k = min(MAX_W / max(1, w), MAX_H / max(1, h))
-            x0, y0 = SX + SW / 2 - w * k / 2, SY + SH / 2 - h * k / 2
+            x0, y0 = CANVAS_W / 2 - w * k / 2, MULTI_H / 2 - h * k / 2
             to_x, to_y = (lambda x: x0 + (x - left) * k), (lambda y: y0 + (y - top) * k)
         self.monitors = [(to_x(l), to_y(t), to_x(r), to_y(b)) for l, t, r, b in rects]  # noqa: E741
         self.edges = {side: [(to_x(f), to_y(a0), to_y(a1), i) if side in VERTICAL
@@ -113,7 +117,7 @@ class Screen:
         """Default place for a new device on `edge`, clear of the tiles in `others` [(form, edge, x, y)]."""
         if "-" in edge:
             vertical, horizontal = edge.split("-")
-            return self.snap(form, 0 if horizontal == "left" else CANVAS_W, 0 if vertical == "top" else CANVAS_H)
+            return self.snap(form, 0 if horizontal == "left" else CANVAS_W, 0 if vertical == "top" else self.height)
         cx, cy = (self.left + self.right) / 2, (self.top + self.bottom) / 2
         cx, cy = {"left": (self.left - 40, cy), "right": (self.right + 40, cy),
                   "top": (cx, self.top - 40), "bottom": (cx, self.bottom + 40)}[edge]
