@@ -7,15 +7,13 @@ import os
 import socket
 import time
 
-from .config import CURSOR_MARK
+from .config import CURSOR_MARK, RUNTIME_DIR
 
 
 class Hyprland:
     """Pointer position and warping through Hyprland's IPC socket (the only compositor supported)."""
 
     def __init__(self):
-        uid = os.environ.get("SUDO_UID") or os.environ.get("PKEXEC_UID")
-        self.runtime = f"/run/user/{uid}" if uid else None
         self.path = None
         self.rects = None
         self.rects_t = 0.0
@@ -24,7 +22,7 @@ class Hyprland:
     def socket_path(self):
         if self.path and os.path.exists(self.path):
             return self.path
-        socks = glob.glob(f"{self.runtime}/hypr/*/.socket.sock") if self.runtime else []
+        socks = glob.glob(f"{RUNTIME_DIR}/hypr/*/.socket.sock")
         self.path = max(socks, key=os.path.getmtime) if socks else None
         return self.path
 

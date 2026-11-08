@@ -16,11 +16,23 @@ PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # side_co
 ROOT = os.path.dirname(PACKAGE)  # where the side-control and side-control-backend launchers are
 LAUNCHER = os.path.join(ROOT, "side-control")
 BACKEND = os.path.join(ROOT, "side-control-backend")
-# Running from the AppImage: root cannot read inside the user's mount of it, so root runs the AppImage
-# itself, which starts the backend when given this name
-APPIMAGE = os.environ.get("APPIMAGE") if os.path.isfile(os.environ.get("APPIMAGE", "")) else None
+# Running from the AppImage: the backend outlives this process and its mount of the AppImage, so it runs
+# the AppImage, which starts the backend when given this name. Ours only if this code runs from its mount: an
+# AppImage started us from a terminal (or app) of its own leaves its APPIMAGE and APPDIR to us
+APPDIR = os.environ.get("APPDIR")
+APPIMAGE = os.environ.get("APPIMAGE") if APPDIR and PACKAGE.startswith(os.path.join(APPDIR, "")) else None
 BACKEND_COMMAND = [APPIMAGE, "side-control-backend"] if APPIMAGE else [sys.executable, BACKEND]
-SOCK_PATH = os.environ.get("SIDE_CONTROL_SOCK", "/run/side-control.sock")
+RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+SOCK_PATH = os.environ.get("SIDE_CONTROL_SOCK", os.path.join(RUNTIME_DIR, "side-control.sock"))
+# The backend runs as SERVICE, a system service that runs it as this user with the input group and a few
+# capabilities (data/side-control@.service). Installing it and its polkit rule, which lets this user start
+# it without a password, is the one step that needs root.
+SERVICE = f"side-control@{os.getuid()}.service"
+SERVICE_UNIT = os.path.join(PACKAGE, "data", "side-control@.service")
+SERVICE_RULES = os.path.join(PACKAGE, "data", "side-control.rules")
+UNIT_PATH = "/etc/systemd/system/side-control@.service"
+RULES_PATH = "/etc/polkit-1/rules.d/50-side-control.rules"
+BACKEND_SCRIPT = f"/run/user/{os.getuid()}/side-control/backend"  # what SERVICE runs: written before each start
 CONFIG_DIR = os.path.join(GLib.get_user_config_dir(), "side-control")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "settings.json")
 AUTOSTART_PATH = os.path.join(GLib.get_user_config_dir(), "autostart", APP_ID + ".desktop")

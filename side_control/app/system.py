@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Facts about this computer: bluetoothd's plugins, Bluetooth adapters, Hyprland."""
+"""Facts about this computer: bluetoothd's plugins, the backend's service, Bluetooth adapters, Hyprland."""
 
 import os
+import shlex
 import socket
+import subprocess
 
-from .config import DROPIN_DIR
+from .config import DROPIN_DIR, RULES_PATH, SERVICE_RULES, SERVICE_UNIT, UNIT_PATH
 
 
 def hid_owned():
@@ -50,6 +52,38 @@ def no_input_dropins():
         except OSError:
             pass
     return found
+
+
+def install_file(text, path):
+    """A shell command that writes `text` to `path`, for root to run: root cannot read inside the
+    AppImage, so files are written from their text."""
+    path = shlex.quote(path)
+    return f"mkdir -p \"$(dirname {path})\" && printf %s {shlex.quote(text)} > {path} && chmod 644 {path}"
+
+
+def service_installed():
+    """True if the backend's service is installed as this version of Side Control wants it."""
+    try:
+        with open(SERVICE_UNIT) as ours, open(UNIT_PATH) as installed:
+            return ours.read() == installed.read()
+    except OSError:
+        return False
+
+
+def setup_script():
+    """The shell command, for root, that installs the backend's service and its polkit rule."""
+    with open(SERVICE_UNIT) as unit, open(SERVICE_RULES) as rules:
+        return " && ".join([install_file(unit.read(), UNIT_PATH), install_file(rules.read(), RULES_PATH),
+                            "systemctl daemon-reload", "sleep 1"])  # polkitd picks up its new rule meanwhile
+
+
+def last_log_line(unit):
+    """The last line `unit` logged, if this user may read the journal."""
+    try:
+        return subprocess.run(["journalctl", f"_SYSTEMD_UNIT={unit}", "-n", "1", "-o", "cat", "-q", "--no-pager"],
+                              capture_output=True, text=True, timeout=2).stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def lookup_ids(table, vendor, product):

@@ -1,14 +1,33 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Bluetooth settings, and starting the root backend."""
+"""Bluetooth settings, and starting the backend's service."""
+
+import os
+import shlex
 
 from gi.repository import Adw, GLib, Gio
 
-from .config import BACKEND_COMMAND, DROPIN_DIR, HID_DROPIN, NO_INPUT_CONF, save_settings
-from .system import adapter_label, hid_owned, no_input_dropins
+from .config import (
+    BACKEND_COMMAND,
+    BACKEND_SCRIPT,
+    DROPIN_DIR,
+    HID_DROPIN,
+    NO_INPUT_CONF,
+    SERVICE,
+    save_settings,
+)
+from .system import (
+    adapter_label,
+    hid_owned,
+    install_file,
+    last_log_line,
+    no_input_dropins,
+    service_installed,
+    setup_script,
+)
 
 
 class BluetoothMixin:
-    """Bluetooth settings and the backend process; part of Window."""
+    """Bluetooth settings and the backend's service; part of Window."""
 
     # --- Bluetooth adapter ---
 
@@ -74,13 +93,13 @@ class BluetoothMixin:
 
     def on_hid(self, row, _pspec):
         """Owning HID means bluetoothd runs with -P input. Either way the backend must not run meanwhile
-        (it holds the HID channels when it can), so: stop it, change bluetoothd, start it again - all
-        in one pkexec."""
+        (it holds the HID channels when it can), so: stop it, change bluetoothd (one pkexec), start it
+        again."""
         if self._updating_hid:
             return
         if row.get_active():  # (written from its text: root cannot read inside the AppImage)
             with open(NO_INPUT_CONF) as f:
-                script, files = 'mkdir -p "${2%/*}" && printf %s "$1" > "$2" && chmod 644 "$2"', [f.read(), HID_DROPIN]
+                change = install_file(f.read(), HID_DROPIN)
             self.settings["hid_banner_dismissed"] = False
             save_settings(self.settings)
         else:
@@ -89,48 +108,58 @@ class BluetoothMixin:
                 self.toasts.add_toast(Adw.Toast(title=f"bluetoothd gets -P input from outside {DROPIN_DIR}"))
                 self.refresh_hid()
                 return
-            script = 'rm -f -- "$@"'
+            change = "rm -f -- " + shlex.join(files)
+        change += " && systemctl daemon-reload && systemctl restart bluetooth && sleep 1"
         if self.alive:
-            self.hid_change = (script, files)
+            self.hid_change = change
             self.backend.send(cmd="quit")  # on_status runs it once the backend is gone
         else:
-            self.run_hid_change(script, files)
+            self.run_as_root(change)
 
-    def run_hid_change(self, script, files):
+    # --- the backend's service ---
+
+    def start_backend(self):
+        self.run_as_root(None)
+
+    def run_as_root(self, change):
+        """Run the shell command `change` through pkexec, then start the backend. The backend's service
+        is installed (or updated) in the same pkexec if it needs to be: one password prompt, and none
+        at all once it is installed and there is nothing to change."""
         self.hid_change = None
         self.started_backend = True
-        backend = [*BACKEND_COMMAND, *(["--adapter", self.settings["adapter"]] if self.settings["adapter"] else [])]
-        # sh -c SCRIPT sh N ARG1..ARGN BACKEND...: the change gets the first N arguments, then the rest
-        # (the backend's command) replaces the shell
-        script = ('change() { ' + script + '; }; n=$1; shift; refs=; i=1; '
-                  r'while [ $i -le $n ]; do refs="$refs \"\${$i}\""; i=$((i+1)); done; '
-                  'eval "change $refs" && shift "$n" && systemctl daemon-reload && systemctl restart bluetooth'
-                  ' && sleep 1 && exec "$@"')
-        argv = ["pkexec", "sh", "-c", script, "sh", str(len(files)), *files, *backend]
+        steps = ([] if service_installed() else [setup_script()]) + ([change] if change else [])
+        if not steps:
+            self.start_service()
+            return
         try:
-            proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDERR_PIPE)
+            proc = Gio.Subprocess.new(["pkexec", "sh", "-c", " && ".join(steps)], Gio.SubprocessFlags.STDERR_PIPE)
         except GLib.Error as err:
             self.toasts.add_toast(Adw.Toast(title=f"Could not run pkexec: {err.message}"))
             self.refresh_hid()
             return
 
         def done(proc, result):
-            self._backend_exited(proc, result)
             self.refresh_hid()
+            if proc.get_exit_status() == 0:
+                proc.communicate_utf8_finish(result)
+                self.start_service()
+            else:
+                self._backend_exited(proc, result)
         proc.communicate_utf8_async(None, None, done)
         GLib.timeout_add(3000, self.refresh_hid)
 
-    # --- starting the root backend ---
-
-    def start_backend(self):
-        self.started_backend = True
-        argv = ["pkexec", *BACKEND_COMMAND]
-        if self.settings["adapter"]:
-            argv += ["--adapter", self.settings["adapter"]]
+    def start_service(self):
+        """Write the command the service runs (this checkout or AppImage, on the chosen adapter), and start
+        it. systemctl --wait returns when the backend stops, as the backend's own process would."""
+        command = [*BACKEND_COMMAND, *(["--adapter", self.settings["adapter"]] if self.settings["adapter"] else [])]
         try:
-            proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDERR_PIPE)
-        except GLib.Error as err:
-            self.toasts.add_toast(Adw.Toast(title=f"Could not start the backend: {err.message}"))
+            os.makedirs(os.path.dirname(BACKEND_SCRIPT), exist_ok=True)
+            with open(os.open(BACKEND_SCRIPT, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o700), "w") as f:
+                f.write(f"#!/bin/sh\n# what {SERVICE} runs, written by Side Control\nexec {shlex.join(command)}\n")
+            proc = Gio.Subprocess.new(["systemctl", "start", "--wait", "--no-ask-password", SERVICE],
+                                      Gio.SubprocessFlags.STDERR_PIPE)
+        except (OSError, GLib.Error) as err:
+            self.toasts.add_toast(Adw.Toast(title=f"Could not start the backend: {err}"))
             return
         proc.communicate_utf8_async(None, None, self._backend_exited)
 
@@ -140,5 +169,6 @@ class BluetoothMixin:
         except GLib.Error as error:
             err = error.message
         if proc.get_exit_status() != 0 and not self.alive and not self.restart_backend:
-            last = (err or "").strip().splitlines()[-1:] or [f"exit status {proc.get_exit_status()}"]
+            # pkexec and systemctl say why they failed; why the backend stopped is in its log
+            last = (err or "").strip().splitlines()[-1:] or [last_log_line(SERVICE) or f"see journalctl -u {SERVICE}"]
             self.toasts.add_toast(Adw.Toast(title=f"Backend stopped: {last[0]}"[:160]))

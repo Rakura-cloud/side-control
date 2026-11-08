@@ -70,8 +70,9 @@ cd side-control
 
 ### First run
 
-Side Control asks for your password to start its backend, which runs as root. Turn on
-**Settings → Launch at Login** to start it with your session; it then stays in the tray.
+Side Control asks for your password once, to install the service its backend runs as (see
+[Permissions](#permissions)); after that it starts without asking. Turn on **Settings → Launch at
+Login** to start it with your session; it then stays in the tray.
 
 Then, for each device:
 
@@ -103,8 +104,8 @@ up within a second.
 Needed by the AppImage too:
 
 - **Linux with BlueZ** and a Bluetooth adapter (Bluetooth Classic, which nearly all have).
-- **polkit** (`pkexec`): the backend runs as root to use Bluetooth sockets and read your keyboard and
-  touchpad, and Side Control starts it through `pkexec`.
+- **systemd and polkit** (`pkexec`): the backend runs as a system service, as you, and Side Control
+  installs that service once through `pkexec` (see [Permissions](#permissions)).
 - **Hyprland** for edge hand-off: Side Control asks it where the cursor is. On other compositors
   everything else works, and you switch with the shortcuts instead.
 
@@ -166,17 +167,45 @@ Mouse Scrolling** turns them the other way), and its back / forward buttons are 
 
 ## How it works
 
-Side Control is two programs that talk JSON over the unix socket `/run/side-control.sock`:
+Side Control is two programs that talk JSON over the unix socket `$XDG_RUNTIME_DIR/side-control.sock`:
 
 - **The app** ([`side_control/app/`](side_control/app/), started by `./side-control`) is the GTK window,
   tray icon and edge indicator, running as you. Settings are stored in
   `~/.config/side-control/settings.json`.
 - **The backend** ([`side_control/backend/`](side_control/backend/), started by
-  `./side-control-backend`) runs as root. It registers a Bluetooth HID keyboard and mouse with BlueZ,
-  reads your keyboard and touchpad with evdev, takes them over while a device has the cursor, and sends
-  HID reports to it.
+  `./side-control-backend`) runs as you, through a system service (see [Permissions](#permissions)).
+  It registers a Bluetooth HID keyboard and mouse with BlueZ, reads your keyboard and touchpad with
+  evdev, takes them over while a device has the cursor, and sends HID reports to it.
 
 [AGENTS.md](AGENTS.md) maps out every module.
+
+### Permissions
+
+The backend does not run as root. It runs as you, as `side-control@<your uid>.service`
+([`side-control@.service`](side_control/data/side-control@.service)), with only:
+
+- the `input` group, to read your keyboard, touchpad and mice, and take them over while a device has
+  the cursor;
+- `CAP_NET_BIND_SERVICE`, to listen on the two Bluetooth HID channels, so devices can connect to it;
+- `CAP_NET_RAW`, to keep the link to a device out of Bluetooth's power-save mode, which delays every
+  report;
+- `CAP_NET_ADMIN`, to make the adapter show up as a keyboard and mouse (`btmgmt class`).
+
+The service runs the command Side Control writes to `/run/user/<uid>/side-control/backend`, so it
+follows your checkout or AppImage wherever you keep it. It stops when you log out. A polkit rule,
+[`side-control.rules`](side_control/data/side-control.rules), lets you start, stop and restart your
+own instance without a password; nobody else's, and nothing else. Side Control installs both the first
+time it starts, with one `pkexec` prompt, and again if a new version changes them.
+
+The service gives these rights to code you can edit, so anything running as you could use them too.
+
+To undo it:
+
+```sh
+sudo systemctl stop "side-control@$(id -u)"
+sudo rm /etc/systemd/system/side-control@.service /etc/polkit-1/rules.d/50-side-control.rules
+sudo systemctl daemon-reload
+```
 
 ## Contributing
 

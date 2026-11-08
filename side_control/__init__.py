@@ -2,7 +2,7 @@
 """Side Control: use a Linux computer's keyboard and touchpad on iPhones and iPads.
 
 app/      the GTK window and tray, running as the user
-backend/  the Bluetooth keyboard + mouse, running as root
+backend/  the Bluetooth keyboard + mouse, running as the user with a few capabilities
 They talk JSON over a unix socket: see side_control.backend.control.
 """
 

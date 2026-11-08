@@ -118,12 +118,13 @@ MOUSE_PAUSE_S = 0.3     # a mouse at rest this long ends a push against the edge
 CALIBRATE_RATE = 250    # counts per second while measuring a screen edge to edge
 CALIBRATE_REACTION_S = 0.15  # subtract this much sweep: the time you need to press Stop
 CALIBRATE_MAX_S = 25
+RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"  # the user's: we run as them
 HIDE_CURSOR = True      # hide the PC pointer while a device has control: it would sit at the edge, visible
-CURSOR_MARK = "/run/side-control-cursor-hidden"  # exists while the PC pointer is hidden by us
+CURSOR_MARK = os.path.join(RUNTIME_DIR, "side-control-cursor-hidden")  # exists while the PC pointer is hidden by us
 SCAN_WHILE_CONTROLLING = False  # keep the LE proximity scan on while a device has control? It shares the
                                 # radio with the HID link, so it is paused for smoother pointer movement
 
-SOCK_PATH = os.environ.get("SIDE_CONTROL_SOCK", "/run/side-control.sock")  # GUI <-> this process
+SOCK_PATH = os.environ.get("SIDE_CONTROL_SOCK", os.path.join(RUNTIME_DIR, "side-control.sock"))  # GUI <-> this process
 # set_options from the GUI: option -> (global it sets, type)
 OPTIONS = {"natural_scroll": ("NATURAL_SCROLL", bool), "mouse_natural_scroll": ("MOUSE_NATURAL_SCROLL", bool),
            "tap_to_click": ("TAP_TO_CLICK", bool),

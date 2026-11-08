@@ -2,7 +2,7 @@
 """Starts everything and runs the event loop."""
 
 import atexit
-import os
+import errno
 import select
 import signal
 import socket
@@ -10,6 +10,7 @@ import sys
 import time
 
 import dbus
+import evdev
 
 from . import config
 from .bluez import paired_devices, setup_bluez
@@ -25,8 +26,6 @@ from .proximity import Proximity
 
 
 def main():
-    if os.geteuid() != 0:
-        sys.exit("run with sudo")
     probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         probe.connect(SOCK_PATH)
@@ -48,9 +47,16 @@ def main():
         # devices cannot connect to us then, but we still connect to them
         config.DIAL_ONLY = True
         ctrl_l = intr_l = None
-        log(f"HID channels (PSM {PSM_CTRL}/{PSM_INTR}) are taken ({err.strerror}): probably bluetoothd's input "
-            "plugin. Connecting to devices from here only; to let them connect too, start bluetoothd with "
-            "-P input (side_control/data/bluetooth-no-input.conf)")
+        if err.errno in (errno.EACCES, errno.EPERM):
+            log(f"no right to listen on the HID channels (PSM {PSM_CTRL}/{PSM_INTR}): CAP_NET_BIND_SERVICE is "
+                "missing - start the backend as side-control@<uid>.service. Connecting to devices from here only")
+        else:
+            log(f"HID channels (PSM {PSM_CTRL}/{PSM_INTR}) are taken ({err.strerror}): probably bluetoothd's "
+                "input plugin. Connecting to devices from here only; to let them connect too, start bluetoothd "
+                "with -P input (side_control/data/bluetooth-no-input.conf)")
+    if not evdev.list_devices():  # lists only the ones we may read
+        log("cannot read any keyboard or touchpad: not in the input group - start the backend as "
+            "side-control@<uid>.service")
     fleet = Fleet(int(adapter_path.rsplit("hci", 1)[1]))
     fleet.sync_paired(paired_devices(bus, adapter_path))
     bridge = Bridge(fleet)

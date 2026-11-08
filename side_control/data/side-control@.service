@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Side Control's backend, run as the user whose uid names the instance (side-control@1000.service), with
+# only the rights it needs instead of root: the input group, to read and grab the keyboard and touchpad,
+# and three capabilities: CAP_NET_BIND_SERVICE to listen on the HID channels (L2CAP PSM 17 and 19),
+# CAP_NET_RAW to keep a device's link out of sniff mode, CAP_NET_ADMIN to set the adapter's device
+# class (btmgmt). Installed by the app, with side-control.rules, which lets the user start it.
+#
+# The app writes the command to run to /run/user/<uid>/side-control/backend before starting it: the
+# backend lives in a git checkout or an AppImage, wherever the user put it.
+[Unit]
+Description=Side Control backend for uid %i
+After=bluetooth.service user@%i.service
+# stop with the user's last session: it reads every keyboard
+BindsTo=user@%i.service
+
+[Service]
+User=%i
+SupplementaryGroups=input
+AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_NET_ADMIN
+Environment=XDG_RUNTIME_DIR=/run/user/%i
+ExecStart=/run/user/%i/side-control/backend
