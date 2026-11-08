@@ -3,10 +3,7 @@
 
 from gi.repository import Adw, Gdk, Gtk, Pango
 
-from .geometry import (
-    CANVAS_H, CANVAS_W, SH, SW, SX, SY, TILE, crossings, indicator_rects, screen_edges,
-    screen_layout, snap, spread,
-)
+from .geometry import CANVAS_H, CANVAS_W, SH, SW, SX, SY, TILE, Screen
 from .widgets import device_icon
 
 
@@ -34,7 +31,7 @@ class ArrangementView(Gtk.Fixed):
         self.tiles = {}  # address -> DeviceTile
         self.indicators = []
         self.monitors = []  # one tile per monitor, when there are several
-        self.edges = screen_edges([(SX, SY, SX + SW, SY + SH)])
+        self.layout = Screen()
         self.dragging = None
         self.anim = None
 
@@ -67,14 +64,14 @@ class ArrangementView(Gtk.Fixed):
             return
         geos = [m.get_geometry() for m in monitors]
         rects = [(g.x, g.y, g.x + g.width, g.y + g.height) for g in geos]
-        self.edges = screen_edges(rects)
+        self.layout = Screen(rects)
         self.screen.set_visible(len(monitors) == 1)
         resolution = lambda m, g: f"{round(g.width * m.get_scale())} × {round(g.height * m.get_scale())}"  # noqa: E731
         if len(monitors) == 1:
             self.resolution.set_label(resolution(monitors[0], geos[0]))
             return
         below = self.screen
-        for monitor, geo, (left, top, right, bottom) in zip(monitors, geos, screen_layout(rects)):
+        for monitor, geo, (left, top, right, bottom) in zip(monitors, geos, self.layout.monitors):
             tile = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["screen-tile", "monitor-tile"],
                            tooltip_text=monitor.get_description() or monitor.get_connector())
             tile.set_size_request(round(right - left) - 2, round(bottom - top) - 2)  # a gap between them
@@ -89,9 +86,13 @@ class ArrangementView(Gtk.Fixed):
 
     def monitors_changed(self):
         self.show_monitors()
+        for tile in self.tiles.values():
+            self.layout.settle(tile.form, tile.cfg)
+            self.move(tile, tile.cfg["x"], tile.cfg["y"])
         self.on_moved()
 
     def add(self, address, form, cfg):
+        self.layout.settle(form, cfg)  # saved with other monitors
         tile = DeviceTile(address, form, cfg)
         self.put(tile, cfg["x"], cfg["y"])
         self.tiles[address] = tile
@@ -115,11 +116,12 @@ class ArrangementView(Gtk.Fixed):
         for widget in self.indicators:
             self.remove(widget)
         self.indicators = []
-        spans = crossings({a: (t.form, t.cfg) for a, t in self.tiles.items() if a in active}, corner_dead)
+        spans = self.layout.crossings({a: (t.form, t.cfg) for a, t in self.tiles.items() if a in active},
+                                      corner_dead)
         if self.dragging is None:
             below = self.monitors[-1] if self.monitors else self.screen
-            for address, (_rects, span) in spans.items():
-                for x, y, w, h in indicator_rects(self.tiles[address].cfg["edge"], span, self.edges):
+            for address, span in spans.items():
+                for x, y, w, h in self.layout.indicator_rects(self.tiles[address].cfg["edge"], span):
                     if w <= 0 or h <= 0:
                         continue
                     bar = Gtk.Box(css_classes=["edge-indicator"], can_target=False)
@@ -127,7 +129,7 @@ class ArrangementView(Gtk.Fixed):
                     self.put(bar, x, y)
                     bar.insert_after(self, below)  # under the tiles
                     self.indicators.append(bar)
-        return {a: span for a, (_rects, span) in spans.items()}
+        return spans
 
     def on_drag_begin(self, gesture, x, y):
         tile = self.pick(x, y, Gtk.PickFlags.DEFAULT)
@@ -164,13 +166,15 @@ class ArrangementView(Gtk.Fixed):
         tile.remove_css_class("dragging")
         tile.set_cursor_from_name("grab")
         before = {a: (t.cfg["x"], t.cfg["y"]) for a, t in self.tiles.items()}
-        tile.cfg["edge"], tile.cfg["x"], tile.cfg["y"] = snap(tile.form, tile.cfg["x"] + w / 2,
-                                                              tile.cfg["y"] + h / 2)
+        tile.cfg["edge"], tile.cfg["x"], tile.cfg["y"] = self.layout.snap(tile.form, tile.cfg["x"] + w / 2,
+                                                                          tile.cfg["y"] + h / 2)
         edge = tile.cfg["edge"]
         if "-" not in edge:
-            row = [(t.form, t.cfg) for t in self.tiles.values() if t.cfg["edge"] == edge]
+            against = {seg[0] for _i, seg in self.layout.attached(tile.form, tile.cfg)}
+            row = [(t.form, t.cfg) for t in self.tiles.values() if t.cfg["edge"] == edge
+                   and against & {seg[0] for _i, seg in self.layout.attached(t.form, t.cfg)}]
             if len(row) > 1:
-                spread(row, edge)
+                self.layout.spread(row, edge)
         self.dragging = None
         self.animate(before)
         self.on_moved()
