@@ -31,6 +31,7 @@ from .config import (
     PINCH_STEP_MM,
     SCAN_WHILE_CONTROLLING,
     SCROLL_STEP_MM,
+    SWIPE_SIDE_BUTTON,
     SWIPE_UP_BUTTON,
     SWIPE_UP_MM,
     SWITCH_SWIPE_MM,
@@ -245,12 +246,12 @@ class Bridge:
             self.switch_to(target)
 
     def three_finger_switch(self, tp):
-        """Three-finger swipe left/right: previous / next device. The switch waits until every finger
-        is off the pad: grabbing or letting go of the touchpad mid-swipe would hand the compositor half
-        a gesture (a workspace swipe that never ends)."""
+        """Three-finger swipe left/right. On a device: its App Switcher. On the PC, only with
+        THREE_FINGER_FROM_PC: the previous / next device, once every finger is off the pad (grabbing the
+        touchpad mid-swipe would leave the compositor half a gesture, a workspace swipe that never ends)."""
         if tp.three_step and not tp.contacts:
             step, tp.three_step = tp.three_step, 0
-            if self.on_phone or THREE_FINGER_FROM_PC:
+            if not self.on_phone:
                 self.cycle(step)
             return
         x = tp.centroid_x(3)
@@ -259,10 +260,14 @@ class Bridge:
             return
         if tp.three is None:
             tp.three = x
-        elif (not tp.three_done and abs(x - tp.three) >= SWITCH_SWIPE_MM and config.THREE_FINGER_SWITCH
-              and (self.on_phone or THREE_FINGER_FROM_PC)):
+        elif (not tp.three_done and not tp.swiped and abs(x - tp.three) >= SWITCH_SWIPE_MM
+              and config.THREE_FINGER_SWITCH):
             tp.three_done = True
-            tp.three_step = 1 if x > tp.three else -1
+            if self.on_phone:
+                self.click(SWIPE_SIDE_BUTTON)
+                log("three-finger swipe left/right -> App Switcher")
+            elif THREE_FINGER_FROM_PC:
+                tp.three_step = 1 if x > tp.three else -1
 
     def pc_event(self, tp, ev):
         """While the PC has control: feed pointer motion to the hand-off edge detector and the
@@ -412,7 +417,8 @@ class Bridge:
                     tp.travel += math.hypot(mx, my)
                     if tp.fingers >= 3 and not tp.click_bit:
                         tp.swipe += my
-                        if tp.swipe < -SWIPE_UP_MM and not tp.swiped and config.SWIPE_UP_HOME:
+                        if (tp.swipe < -SWIPE_UP_MM and not tp.swiped and not tp.three_done
+                                and config.SWIPE_UP_HOME):
                             tp.swiped = True
                             self.click(SWIPE_UP_BUTTON)
                             log("three-finger swipe up -> Home")

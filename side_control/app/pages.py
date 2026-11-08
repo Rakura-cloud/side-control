@@ -69,7 +69,7 @@ class PagesMixin:
         gestures = Adw.PreferencesGroup(title="Gestures")
         for key, icon, title, subtitle in (
                 ("three_finger_switch", "sc-swipe-symbolic", "Three-Finger Swipe",
-                 "Swipe on the touchpad to jump to the next device"),
+                 "Swipe on the touchpad to open the device’s App Switcher"),
                 ("shake_to_locate", "sc-ads-click-symbolic", "Shake to Locate",
                  "Briefly enlarge the cursor on whichever screen it’s on"),
                 ("tap_to_click", "sc-touch-app-symbolic", "Tap to Click on Device",

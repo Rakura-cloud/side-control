@@ -445,29 +445,30 @@ class SpanHandoff(unittest.TestCase):
 
 class ThreeFingerSwitch(unittest.TestCase):
     def swipe(self, on_phone):
-        """Three fingers 30 mm to the right, then lifted. Returns the cycle steps made at each stage."""
+        """Three fingers 30 mm to the right, then lifted: (buttons clicked and devices cycled mid-swipe,
+        devices cycled once the fingers are up)."""
         bridge, _phone, _mouse = make_mouse_bridge(on_phone=on_phone)
-        steps = []
-        bridge.cycle = steps.append
+        events = []
+        bridge.cycle = lambda step: events.append(("cycle", step))
+        bridge.click = lambda bit: events.append(("click", bit))
         tp = make_touchpad()
         tp.three, tp.three_done, tp.three_step = None, False, 0
         for dx in (0, 10, 20, 30):
             tp.contacts = {i: [10 * i + dx, 5] for i in range(3)}
             bridge.three_finger_switch(tp)
-        during = list(steps)
+        during = list(events)
         tp.contacts = {}
         bridge.three_finger_switch(tp)
-        return during, steps
+        return during, events[len(during):]
 
-    def test_on_a_device_switches_once_the_fingers_lift(self):
-        during, after = self.swipe(on_phone=True)
-        self.assertEqual(during, [])  # not mid-swipe: the touchpad would change hands under the fingers
-        self.assertEqual(after, [1])
+    def test_on_a_device_opens_its_app_switcher(self):
+        self.assertEqual(self.swipe(on_phone=True), ([("click", config.SWIPE_SIDE_BUTTON)], []))
 
     def test_on_the_pc_the_swipe_is_the_compositors(self):
         self.assertEqual(self.swipe(on_phone=False), ([], []))
         with mock.patch("side_control.backend.bridge.THREE_FINGER_FROM_PC", True):
-            self.assertEqual(self.swipe(on_phone=False)[1], [1])
+            # and the switch waits for the fingers: the touchpad must not change hands mid-swipe
+            self.assertEqual(self.swipe(on_phone=False), ([], [("cycle", 1)]))
 
 
 class HideCursor(unittest.TestCase):
