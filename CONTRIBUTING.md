@@ -9,8 +9,8 @@ Open an [issue](https://github.com/Rakura-cloud/side-control/issues) with:
 - your distribution, desktop or compositor (e.g. Hyprland), and Bluetooth adapter;
 - the device: model and iOS / iPadOS / Android version;
 - what you did, what you expected, and what happened;
-- the backend's output, if you can: stop it, run `sudo ./side-control-backend` in a terminal,
-  reproduce the problem, and paste what it printed.
+- the backend's log, if you can: reproduce the problem, then paste what
+  `journalctl -u "side-control@$(id -u)" -b` prints.
 
 Reports of devices and setups that work are useful too: say so in an issue.
 
@@ -22,22 +22,21 @@ cd side-control
 ./side-control
 ```
 
-Install the dependencies listed in the [README](README.md#requirements). To work on the backend, stop
-the running one and start yours in a terminal, so you see its log:
+Install the dependencies listed in the [README](README.md#requirements). The backend runs as the
+service `side-control@<uid>.service`, which runs whatever `./side-control` last started it with: your
+checkout. To work on the backend, restart it after a change (no password needed) and follow its log:
 
 ```sh
-sudo pkill -f side-control-backend
-sudo ./side-control-backend
+systemctl restart "side-control@$(id -u)"
+journalctl -f -u "side-control@$(id -u)"
 ```
-
-Then start `./side-control` in another terminal; it connects to your backend.
 
 [AGENTS.md](AGENTS.md) maps out the code: which module does what, and how the app and the backend
 talk.
 
 **Careful:** the backend takes over your keyboard and touchpad while a device has the cursor. If it gets
-stuck, Super+Esc or Ctrl+Alt+P bring control back, and `sudo pkill -f side-control-backend` from
-another session always does.
+stuck, Super+Esc or Ctrl+Alt+P bring control back, and `systemctl stop "side-control@$(id -u)"` from
+another terminal or session always does.
 
 ## Before you open a pull request
 

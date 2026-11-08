@@ -27,8 +27,8 @@ from .proximity import zone_for
 
 
 class Control:
-    """Newline-delimited JSON over a unix socket, so a GUI running as the normal user can
-    watch and drive this root process.
+    """Newline-delimited JSON over a unix socket in the user's runtime directory, so the GUI can
+    watch and drive this process.
 
     server -> client: {"type": "state", ...}  every device with its settings and signal, who has
                                               control, captured inputs; about once a second or on change
@@ -69,10 +69,7 @@ class Control:
             pass
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         listener.bind(SOCK_PATH)
-        uid = int(os.environ.get("SUDO_UID") or os.environ.get("PKEXEC_UID") or -1)
-        if uid >= 0:  # only the user who started us may talk to us
-            os.chown(SOCK_PATH, uid, -1)
-        os.chmod(SOCK_PATH, 0o600)
+        os.chmod(SOCK_PATH, 0o600)  # only the user we run as may talk to us
         listener.listen(4)
         listener.setblocking(False)
         self.listener = listener

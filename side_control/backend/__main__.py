@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""python -m side_control.backend [--adapter hciX], as root"""
+"""python -m side_control.backend [--adapter hciX], as the user, through side-control@<uid>.service"""
 from .main import main
 
 try:

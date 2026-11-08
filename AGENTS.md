@@ -10,11 +10,11 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 
 | Path | What it is |
 |---|---|
-| `side-control`, `side-control-backend` | Launchers: put the checkout on `sys.path` and run `side_control.app` / `side_control.backend`. Files, not `python -m`, because `pkexec` starts programs in another directory. |
+| `side-control`, `side-control-backend` | Launchers: put the checkout on `sys.path` and run `side_control.app` / `side_control.backend`. Files, not `python -m`, because the service starts the backend in another directory. |
 | `side_control/app/` | The GTK 4 / libadwaita app. Runs as the user. |
-| `side_control/backend/` | The root backend: Bluetooth HID keyboard + mouse, input, hand-off, gestures. |
+| `side_control/backend/` | The backend: Bluetooth HID keyboard + mouse, input, hand-off, gestures. Runs as the user, through a system service. |
 | `side_control/monitors.py` | Outer edges of the monitor layout and positions along them. No GTK, no compositor. |
-| `side_control/data/` | Icons (app icons and Material Symbols Rounded as `sc-*-symbolic.svg`) and `bluetooth-no-input.conf`, the systemd drop-in for "Own HID Profile". |
+| `side_control/data/` | Icons (app icons and Material Symbols Rounded as `sc-*-symbolic.svg`), `bluetooth-no-input.conf`, the systemd drop-in for "Own HID Profile", and `side-control@.service` and `side-control.rules`, the backend's service and the polkit rule that lets its user start it. |
 | `tests/` | Tests that need no Bluetooth, input devices, display or root. |
 | `tools/screenshots.py`, `tools/screenshots.sh` | Render every page against a fake backend (headless with the `.sh`). |
 | `docs/screenshots/` | README images, made by `tools/screenshots.sh`. |
@@ -31,9 +31,9 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 | `window.py` | `Window`: navigation and reacting to the backend (`on_status`, `on_state`, `layout_changed`). Built from the mixins below. |
 | `pages.py` | `PagesMixin`: the five pages. |
 | `dialogs.py` | `DialogsMixin`: pairing, forgetting, the AssistiveTouch guide. |
-| `bluetooth.py` | `BluetoothMixin`: adapter, name, Own HID Profile, starting the backend through `pkexec`. |
-| `config.py` | Paths, defaults, the settings file, Launch at Login, `BACKEND_COMMAND` (differs inside the AppImage). |
-| `system.py` | bluetoothd's plugins, adapter names, Hyprland IPC. |
+| `bluetooth.py` | `BluetoothMixin`: adapter, name, Own HID Profile, installing (`pkexec`) and starting the backend's service. |
+| `config.py` | Paths, defaults, the settings file, Launch at Login, `BACKEND_COMMAND` (differs inside the AppImage), `SERVICE`. |
+| `system.py` | bluetoothd's plugins, whether the service is installed and the root commands that install it, adapter names, Hyprland IPC. |
 | `backend_link.py` | `Backend`: the socket client, reconnects by itself. |
 | `geometry.py` | Arrangement maths, ported from the design. No GTK: tested in `tests/test_geometry.py`. |
 | `arrangement.py`, `widgets.py`, `overlay.py`, `tray.py` | The canvas, shared widgets, the edge indicator, the tray icon and menu. |
@@ -59,14 +59,20 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 
 ## Architecture
 
-- The app talks to the backend through newline-delimited JSON on `/run/side-control.sock`
+- The app talks to the backend through newline-delimited JSON on `$XDG_RUNTIME_DIR/side-control.sock`
   (`SIDE_CONTROL_SOCK` overrides it). See the `Control` docstring in `backend/control.py`.
 - App → backend commands: `set_target`, `set_handoff`, `forget`, `set_options`, `discover`, `pair`,
   `quit`, `calibrate`, `action`.
 - Backend → app: `state` snapshots (devices, target, sharing, nearby, ...) and events `log`, `rssi`,
   `paired`, `shake`, `open`, `calibration`.
-- The app starts the backend with `pkexec` when it is not running. It can also run on its own:
-  `sudo ./side-control-backend [--adapter hciX]`.
+- The backend runs as the user, never as root: `side-control@<uid>.service` gives it the `input` group
+  and `CAP_NET_BIND_SERVICE` (listen on PSM 17/19), `CAP_NET_RAW` (`hid.disable_sniff`) and
+  `CAP_NET_ADMIN` (`btmgmt class`). Without them it still runs, with less: dial-only, no inputs, sniff
+  mode on. The app writes the command to run (`BACKEND_COMMAND --adapter ...`) to
+  `/run/user/<uid>/side-control/backend` and runs `systemctl start --wait`, which a polkit rule allows
+  without a password. If the unit in `/etc` differs from `data/side-control@.service`, it first installs
+  both through `pkexec`, in the same prompt as an Own HID Profile change if there is one. Its log:
+  `journalctl -u side-control@<uid>`.
 - Backend options the app can change at runtime (`config.OPTIONS`) and `DIAL_ONLY` are read as
   `config.NAME`, never imported by name, so a change reaches every module. Other constants are imported
   by name.
@@ -76,8 +82,9 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
   must not reach `Handoff.phone_motion`. When a change moves the device pointer, keep that model right.
 - If bluetoothd's input plugin holds PSM 17/19, the backend runs "dial-only" (`config.DIAL_ONLY`): it
   connects to devices instead of accepting their connections.
-- Inside the AppImage, root cannot read the user's mount of it, so the backend is started as
-  `pkexec <AppImage> side-control-backend`, and the HID drop-in is written from its text.
+- Inside the AppImage, the service runs `<AppImage> side-control-backend` (the backend outlives the
+  app's mount of it), and root cannot read the user's mount, so the files `pkexec` installs are written
+  from their text.
 
 ## Design
 
@@ -121,9 +128,9 @@ UI changes. `packaging/appimage/build.sh` builds the AppImage locally (Arch Linu
 
 - Nothing here can be fully tested without real hardware: Bluetooth, iOS behaviour and input
   grabbing need a person with an iPhone or iPad. Say what you verified and what you couldn't.
-- The backend runs as root and grabs the keyboard and touchpad while a device has the cursor. A bug
-  there can leave the computer without input: Super+Esc and Ctrl+Alt+P bring control back; stopping the
-  backend (`sudo pkill -f side-control-backend`) always does.
+- The backend grabs the keyboard and touchpad while a device has the cursor. A bug there can leave the
+  computer without input: Super+Esc and Ctrl+Alt+P bring control back; stopping the backend
+  (`systemctl stop side-control@<uid>`) always does.
 - Don't start the backend, restart bluetoothd or change `/etc` on someone's machine without asking.
 - Never commit `~/.config/side-control/settings.json` or other personal data (device names, Bluetooth
   addresses).

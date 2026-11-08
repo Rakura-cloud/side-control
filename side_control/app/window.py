@@ -42,9 +42,9 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
         self.settings = load_settings()
         self.alive = False
         self.resync = True
-        self.started_backend = False  # tried pkexec once already
+        self.started_backend = False  # tried to start it once already
         self.restart_backend = False  # waiting for the backend to quit, then start it on another adapter
-        self.hid_change = None  # (script, files) to run once the backend has quit: see on_hid
+        self.hid_change = None  # shell command for root to run once the backend has quit: see on_hid
         self.devs = {}  # address -> last device dict from the backend
         self.rows = {}
         self.target = None
@@ -184,7 +184,7 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
         self.update_overlay()
         self.tray.update()
         if self.hid_change:
-            self.run_hid_change(*self.hid_change)
+            self.run_as_root(self.hid_change)
         elif self.restart_backend or (reason == "not running" and not self.started_backend):
             self.restart_backend = False
             self.start_backend()

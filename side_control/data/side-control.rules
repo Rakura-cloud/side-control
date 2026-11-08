@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Side Control: lets a user start, stop and restart their own backend, side-control@<their uid>.service,
+// from their active local session without a password. Nobody else's, and nothing else.
+polkit.addRule(function(action, subject) {
+    if (action.id != "org.freedesktop.systemd1.manage-units" || !subject.local || !subject.active)
+        return polkit.Result.NOT_HANDLED;
+    var unit = action.lookup("unit") || "", verb = action.lookup("verb");
+    if (unit.indexOf("side-control@") != 0 || (verb != "start" && verb != "stop" && verb != "restart"))
+        return polkit.Result.NOT_HANDLED;
+    var uid = polkit.spawn(["/usr/bin/id", "-u", subject.user]).trim();
+    return unit == "side-control@" + uid + ".service" ? polkit.Result.YES : polkit.Result.NOT_HANDLED;
+});
