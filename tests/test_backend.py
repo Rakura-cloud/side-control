@@ -443,6 +443,33 @@ class SpanHandoff(unittest.TestCase):
         self.assertAlmostEqual(y, 0.05 * 900, delta=2)
 
 
+class ThreeFingerSwitch(unittest.TestCase):
+    def swipe(self, on_phone):
+        """Three fingers 30 mm to the right, then lifted. Returns the cycle steps made at each stage."""
+        bridge, _phone, _mouse = make_mouse_bridge(on_phone=on_phone)
+        steps = []
+        bridge.cycle = steps.append
+        tp = make_touchpad()
+        tp.three, tp.three_done, tp.three_step = None, False, 0
+        for dx in (0, 10, 20, 30):
+            tp.contacts = {i: [10 * i + dx, 5] for i in range(3)}
+            bridge.three_finger_switch(tp)
+        during = list(steps)
+        tp.contacts = {}
+        bridge.three_finger_switch(tp)
+        return during, steps
+
+    def test_on_a_device_switches_once_the_fingers_lift(self):
+        during, after = self.swipe(on_phone=True)
+        self.assertEqual(during, [])  # not mid-swipe: the touchpad would change hands under the fingers
+        self.assertEqual(after, [1])
+
+    def test_on_the_pc_the_swipe_is_the_compositors(self):
+        self.assertEqual(self.swipe(on_phone=False), ([], []))
+        with mock.patch("side_control.backend.bridge.THREE_FINGER_FROM_PC", True):
+            self.assertEqual(self.swipe(on_phone=False)[1], [1])
+
+
 class HideCursor(unittest.TestCase):
     """Hyprland.hide_cursor against a fake IPC socket: only a pointer it hid is shown again."""
 

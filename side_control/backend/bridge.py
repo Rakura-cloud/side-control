@@ -36,6 +36,7 @@ from .config import (
     SWITCH_SWIPE_MM,
     TAP_TIME,
     TAP_TRAVEL_MM,
+    THREE_FINGER_FROM_PC,
     TOGGLE,
     TOUCHPAD_SPEED,
     ZOOM_IN,
@@ -244,15 +245,24 @@ class Bridge:
             self.switch_to(target)
 
     def three_finger_switch(self, tp):
+        """Three-finger swipe left/right: previous / next device. The switch waits until every finger
+        is off the pad: grabbing or letting go of the touchpad mid-swipe would hand the compositor half
+        a gesture (a workspace swipe that never ends)."""
+        if tp.three_step and not tp.contacts:
+            step, tp.three_step = tp.three_step, 0
+            if self.on_phone or THREE_FINGER_FROM_PC:
+                self.cycle(step)
+            return
         x = tp.centroid_x(3)
         if x is None:
             tp.three, tp.three_done = None, False
             return
         if tp.three is None:
             tp.three = x
-        elif not tp.three_done and abs(x - tp.three) >= SWITCH_SWIPE_MM and config.THREE_FINGER_SWITCH:
+        elif (not tp.three_done and abs(x - tp.three) >= SWITCH_SWIPE_MM and config.THREE_FINGER_SWITCH
+              and (self.on_phone or THREE_FINGER_FROM_PC)):
             tp.three_done = True
-            self.cycle(1 if x > tp.three else -1)
+            tp.three_step = 1 if x > tp.three else -1
 
     def pc_event(self, tp, ev):
         """While the PC has control: feed pointer motion to the hand-off edge detector and the

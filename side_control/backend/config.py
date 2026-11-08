@@ -25,6 +25,9 @@ MOD_KEYS = {e.KEY_LEFTMETA: "super", e.KEY_RIGHTMETA: "super", e.KEY_LEFTSHIFT: 
             e.KEY_LEFTCTRL: "ctrl", e.KEY_RIGHTCTRL: "ctrl"}
 SHARE_CURSOR = True   # edge hand-off on (Super+Shift+S / the GUI toggles it)
 THREE_FINGER_SWITCH = True  # three-finger swipe left/right: previous / next device (the PC included)
+# ...also while the PC has control. Off: compositors use three-finger swipes for workspaces (Hyprland,
+# GNOME, KDE), and the PC's touchpad is not grabbed, so one swipe would do both
+THREE_FINGER_FROM_PC = False
 SWITCH_SWIPE_MM = 25.0
 SHAKE_TO_LOCATE = False  # shaking the PC pointer asks the GUI to enlarge it for a moment
 SHAKE_TURNS = 4          # direction reversals...
