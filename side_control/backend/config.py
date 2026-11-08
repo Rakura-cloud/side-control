@@ -24,7 +24,10 @@ MOD_KEYS = {e.KEY_LEFTMETA: "super", e.KEY_RIGHTMETA: "super", e.KEY_LEFTSHIFT: 
             e.KEY_RIGHTSHIFT: "shift", e.KEY_LEFTALT: "alt", e.KEY_RIGHTALT: "alt",
             e.KEY_LEFTCTRL: "ctrl", e.KEY_RIGHTCTRL: "ctrl"}
 SHARE_CURSOR = True   # edge hand-off on (Super+Shift+S / the GUI toggles it)
-THREE_FINGER_SWITCH = True  # three-finger swipe left/right: previous / next device (the PC included)
+THREE_FINGER_SWITCH = True  # three-finger swipe left/right: the device's App Switcher (SWIPE_SIDE_BUTTON)
+# ...and while the PC has control, the previous / next device. Off: compositors use three-finger swipes
+# for workspaces (Hyprland, GNOME, KDE), and the PC's touchpad is not grabbed, so one swipe would do both
+THREE_FINGER_FROM_PC = False
 SWITCH_SWIPE_MM = 25.0
 SHAKE_TO_LOCATE = False  # shaking the PC pointer asks the GUI to enlarge it for a moment
 SHAKE_TURNS = 4          # direction reversals...
@@ -59,6 +62,10 @@ CTRL = 0x11  # left or right Ctrl in the modifier byte
 SWIPE_UP_HOME = True  # three-finger swipe up presses SWIPE_UP_BUTTON
 SWIPE_UP_MM = 15.0  # three-finger swipe up this far presses SWIPE_UP_BUTTON (Home)
 SWIPE_UP_BUTTON = 0x08  # mouse button 4, same as Ctrl+Alt+H
+# Three-finger swipe left/right on a device presses this: a mouse cannot swipe along the Home bar to
+# switch apps, so assign App Switcher to it in AssistiveTouch > Devices > (this PC) > Customize
+# Additional Buttons (swipe once to have it pressed there)
+SWIPE_SIDE_BUTTON = 0x80  # mouse button 8, the last one in the report
 NEAR_RSSI = -45   # dBm: the phone counts as "very near" at or above this (smoothed)...
 AWAY_RSSI = -55   # ...and as moved away again below this. Tune with the live panel.
 GAUGE_MIN, GAUGE_MAX = -100, -25  # dBm range of the panel's gauge

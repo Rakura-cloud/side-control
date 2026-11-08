@@ -21,7 +21,7 @@ from .config import (
     save_settings,
 )
 from .dialogs import DialogsMixin
-from .geometry import BASE_SCREEN, OPPOSITE, edge_segments, free_spot
+from .geometry import BASE_SCREEN, OPPOSITE, edge_segments
 from .overlay import EdgeOverlay
 from .pages import PagesMixin
 from .system import hyprland
@@ -158,7 +158,7 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
         if cfg["edge"] is None or cfg["x"] is None or cfg["y"] is None:
             used = {e for _f, e, _x, _y in others}
             edge = cfg["edge"] or next((e for e in OPPOSITE if e not in used), "bottom")
-            cfg["edge"], cfg["x"], cfg["y"] = free_spot(form, edge, others)
+            cfg["edge"], cfg["x"], cfg["y"] = self.arrangement.layout.free_spot(form, edge, others)
         self.arrangement.add(address, form, cfg)
         row = DeviceRow(self, address)
         self.devices_group.add(row)

@@ -17,8 +17,8 @@ class Hyprland:
         uid = os.environ.get("SUDO_UID") or os.environ.get("PKEXEC_UID")
         self.runtime = f"/run/user/{uid}" if uid else None
         self.path = None
-        self.box = None
-        self.box_t = 0.0
+        self.rects = None
+        self.rects_t = 0.0
         self.hidden = os.path.exists(CURSOR_MARK)  # a backend that was killed left it hidden
 
     def socket_path(self):
@@ -57,22 +57,21 @@ class Hyprland:
             return None
 
     def layout(self):
-        """(left, top, right, bottom) of all monitors in layout pixels, cached for a few seconds."""
+        """[(left, top, right, bottom)] of every monitor in layout pixels, cached for a few seconds."""
         now = time.monotonic()
-        if now - self.box_t > 3:
-            self.box_t = now
+        if now - self.rects_t > 3:
+            self.rects_t = now
             try:
-                boxes = []
+                rects = []
                 for m in json.loads(self.request("j/monitors")):
                     w, h = m["width"] / m["scale"], m["height"] / m["scale"]
                     if m.get("transform", 0) % 2:  # rotated 90/270 degrees
                         w, h = h, w
-                    boxes.append((m["x"], m["y"], m["x"] + round(w), m["y"] + round(h)))
-                self.box = (min(b[0] for b in boxes), min(b[1] for b in boxes),
-                            max(b[2] for b in boxes), max(b[3] for b in boxes))
+                    rects.append((m["x"], m["y"], m["x"] + round(w), m["y"] + round(h)))
+                self.rects = rects or None
             except (TypeError, ValueError, KeyError):
-                self.box = None
-        return self.box
+                self.rects = None
+        return self.rects
 
     def warp(self, x, y):
         reply = self.request(f"dispatch hl.dsp.cursor.move({{x={x:.0f},y={y:.0f}}})")

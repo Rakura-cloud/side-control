@@ -32,6 +32,7 @@ class Touchpad:
         self.contacts = {}  # multitouch slot -> [x, y] of each finger on the pad
         self.three = None  # centroid x (mm) where a three-finger touch started, for switching devices
         self.three_done = False
+        self.three_step = 0  # the switch a swipe asked for, made once every finger is off the pad
         self.reset()
 
     def reset(self):

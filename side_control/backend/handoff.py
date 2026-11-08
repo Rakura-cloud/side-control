@@ -17,6 +17,7 @@ from .config import (
     RETURN_PUSH,
 )
 from .events import log
+from ..monitors import SIDES, along_edge, outer_edges, point_on_edge
 
 
 def handoff_exits(zone, span=None):
@@ -65,6 +66,14 @@ class Handoff:
         self.vx = self.vy = 0.0  # modelled device pointer, counts from the top-left
         self.return_push = 0.0
         self.blocked_logged = 0.0
+        self.rects = self.outer = None
+
+    def edges(self):
+        """The monitors' outer edges, worked out again only when the layout changes."""
+        rects = self.comp.layout()
+        if rects != self.rects:
+            self.rects, self.outer = rects, outer_edges(rects) if rects else None
+        return self.outer
 
     def configure(self, phone, zone, require_near, screen_w, screen_h, speed=None, span=None):
         phone.zone = zone if zone in HANDOFF_ZONES else None
@@ -116,20 +125,16 @@ class Handoff:
         phones = [p for p in self.fleet.connected() if p.zone]
         if not phones:
             return
-        pos, box = self.comp.cursor(), self.comp.layout()
-        if not pos or not box:
+        pos, edges = self.comp.cursor(), self.edges()
+        if not pos or not edges:
             return
-        (x, y), (left, top, right, bottom) = pos, box
-        m = EDGE_MARGIN_PX
-        at = {"left": x <= left + m, "right": x >= right - 1 - m,
-              "top": y <= top + m, "bottom": y >= bottom - 1 - m}
+        x, y = pos
+        along = {side: along_edge(edges[side], side, x, y, EDGE_MARGIN_PX) for side in SIDES}
         toward = {"left": -mx, "right": mx, "top": -my, "bottom": my}
-        along = {"left": (y - top) / max(1, bottom - top), "right": (y - top) / max(1, bottom - top),
-                 "top": (x - left) / max(1, right - left), "bottom": (x - left) / max(1, right - left)}
         for phone in phones:
             for edge, in_zone in handoff_exits(phone.zone, phone.span):
                 key = (phone.address, edge)
-                if at[edge] and in_zone(along[edge]):
+                if along[edge] is not None and in_zone(along[edge]):
                     if not self.push.get(key):
                         self.push_t[key] = time.monotonic()
                     self.push[key] = max(0.0, self.push.get(key, 0.0) + toward[edge])
@@ -139,6 +144,11 @@ class Handoff:
                         return
                 else:
                     self.push[key] = 0.0
+
+    @staticmethod
+    def reach(phone, edge):
+        """(lo, hi): the stretch of the PC edge beside the device, which its whole side maps onto."""
+        return phone.span if phone.span and phone.zone == edge else (0.0, 1.0)
 
     def enter(self, phone, edge, frac):
         self.edge, self.entry_frac = edge, frac
@@ -156,7 +166,8 @@ class Handoff:
             self.edge = handoff_exits(phone.zone)[0][0]
             self.entry_frac = sum(phone.span) / 2 if phone.span and phone.zone in OPPOSITE else 0.5
         w, h = phone.size()
-        frac = self.entry_frac
+        lo, hi = self.reach(phone, self.edge)
+        frac = max(0.0, min(1.0, (self.entry_frac - lo) / max(1e-6, hi - lo)))  # along the device's side
         # the pointer enters through the device side opposite to the PC edge it left by; pin it into
         # the nearer corner of that side first (the device clamps at its screen edges), then glide
         # along the side. Sent in one burst, iOS pointer acceleration would carry the pointer much
@@ -201,14 +212,13 @@ class Handoff:
         edge, back = self.edge, OPPOSITE[self.edge]
         w, h = self.bridge.phone.size()
         frac = (self.vy / h) if back in ("left", "right") else (self.vx / w)
+        lo, hi = self.reach(self.bridge.phone, edge)
+        frac = lo + frac * (hi - lo)  # back beside the device, not anywhere along the edge
         self.bridge.switch_to(None)  # -> PC; on_leave() clears the state
-        box = self.comp.layout()
-        if not box:
+        edges = self.edges()
+        if not edges or not edges[edge]:
             return
-        left, top, right, bottom = box
-        i = RETURN_INSET_PX
-        x = {"left": left + i, "right": right - 1 - i}.get(edge, left + frac * (right - left))
-        y = {"top": top + i, "bottom": bottom - 1 - i}.get(edge, top + frac * (bottom - top))
+        x, y = point_on_edge(edges[edge], edge, frac, RETURN_INSET_PX)
         self.comp.warp(x, y)
         log(f"pointer returned to the PC at its {edge} edge")
 

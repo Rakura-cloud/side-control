@@ -62,7 +62,7 @@ threading.Thread(target=serve, daemon=True).start()
 
 from side_control.app.application import App  # noqa: E402
 from side_control.app.window import PAGES, Window  # noqa: E402
-from gi.repository import GLib, Gtk  # noqa: E402
+from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 
 def shot(win, name):
@@ -110,4 +110,6 @@ class ScreenshotApp(App):
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    ScreenshotApp().run([])
+    app = ScreenshotApp()
+    app.set_flags(Gio.ApplicationFlags.NON_UNIQUE)  # not handed to a Side Control that is already running
+    app.run([])

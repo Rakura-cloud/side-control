@@ -23,11 +23,13 @@ the phone or tablet: it sees an ordinary Bluetooth keyboard and mouse.
 ## Features
 
 - **Edge hand-off.** Arrange your devices around your screen; the cursor crosses where you put them,
-  entering at the same height it left, and comes back the same way.
+  entering at the same height it left, and comes back the same way. With several monitors, a side
+  means the outer edges of every monitor on that side; edges between two monitors never hand off.
 - **Keyboard and touchpad on the device.** Typing, clicks, tap to click, two-finger scrolling, and
   two-finger left/right swipes that turn the page (Photos, the Home Screen, ...).
-- **Gestures.** Three-finger swipe left/right jumps between your computer and devices; three-finger
-  swipe up goes Home.
+- **Gestures.** On a device, three-finger swipe up goes Home and left/right opens the App Switcher. On
+  the computer, three-finger swipes are left to your desktop (workspaces); `THREE_FINGER_FROM_PC` in
+  `backend/config.py` makes left/right jump to the next device there.
 - **Keyboard shortcuts.** Send the cursor to the next device or back, lock it to the current screen,
   turn sharing on and off.
 - **Edge indicator.** A line on your screen edge shows where each device is reached. Choose its style (Subtle, Standard, Bold, Glow) and colour.
@@ -104,7 +106,7 @@ Needed by the AppImage too:
 - **polkit** (`pkexec`): the backend runs as root to use Bluetooth sockets and read your keyboard and
   touchpad, and Side Control starts it through `pkexec`.
 - **Hyprland** for edge hand-off: Side Control asks it where the cursor is. On other compositors
-  everything else works, and you switch with the shortcuts or the three-finger swipe instead.
+  everything else works, and you switch with the shortcuts instead.
 
 Bundled in the AppImage, needed when running from source:
 
@@ -140,7 +142,7 @@ sudo pacman -S python python-gobject python-cairo python-dbus python-evdev gtk4 
 | Pinch | Zoom, through the Zoom shortcuts of Accessibility → Zoom (turn on Zoom and its Keyboard Shortcuts) |
 | <kbd>Ctrl</kbd> + pinch | Zoom in the app (<kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd>, e.g. Safari) |
 | Three fingers up | Home (mouse button 4, assign it in AssistiveTouch as above) |
-| Three fingers left/right | Previous / next device, the computer included |
+| Three fingers left/right | App Switcher (mouse button 8: swipe once, then assign it in AssistiveTouch as above) |
 
 A mouse works on the device too, one to one (no acceleration; `MOUSE_ACCEL_*` in
 [`config.py`](side_control/backend/config.py) turn it on). Its wheel and tilt wheel scroll (**Natural

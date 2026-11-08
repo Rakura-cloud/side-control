@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Backend logic that needs no Bluetooth, input devices or root: python -m unittest discover tests"""
+import json
 import os
 import sys
 import tempfile
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -16,6 +18,7 @@ from side_control.backend.hid import REPORT_MAP  # noqa: E402
 from side_control.backend import inputs  # noqa: E402
 from side_control.backend.bluez import form_of  # noqa: E402
 from side_control.backend.compositor import Hyprland  # noqa: E402
+from side_control.monitors import along_edge, outer_edges, pieces, point_on_edge  # noqa: E402
 from side_control.backend.inputs import Accel, Touchpad  # noqa: E402
 from evdev import InputEvent, ecodes as e  # noqa: E402
 
@@ -46,12 +49,16 @@ class FakePhone:
 class FakeCompositor:
     available = True
 
-    def __init__(self):
+    def __init__(self, rects=((0, 0, 1920, 1080),), cursor=None):
+        self.rects, self.pos = list(rects), cursor
         self.warped = None
         self.hidden = False
 
     def layout(self):
-        return (0, 0, 1920, 1080)
+        return self.rects
+
+    def cursor(self):
+        return self.pos
 
     def warp(self, x, y):
         self.warped = (x, y)
@@ -333,6 +340,135 @@ class HandoffTest(unittest.TestCase):
         self.assertEqual(edge, "left")
         self.assertTrue(inside(0.4))
         self.assertFalse(inside(0.7))
+
+
+# eDP-1 (1920x1080 at scale 1.2) below DP-1 (3440x1440), offset to the left: the issue's example
+LAPTOP, WIDE = (0, 0, 1600, 900), (-791, -1440, 2649, 0)
+
+
+class Monitors(unittest.TestCase):
+    """Outer edges of the monitor layout: zones, fractions and where the pointer comes back."""
+
+    def spans(self, rects, side):
+        return [(fixed, a0, a1) for fixed, a0, a1, _ in outer_edges(rects)[side]]
+
+    def test_one_monitor(self):
+        edges = outer_edges([(0, 0, 1920, 1080)])
+        self.assertEqual(edges["left"], [(0, 0, 1080, 0)])
+        self.assertAlmostEqual(along_edge(edges["right"], "right", 1919, 540, 2), 0.5)
+        self.assertIsNone(along_edge(edges["right"], "right", 1900, 540, 2))
+        self.assertEqual(point_on_edge(edges["bottom"], "bottom", 0.25, 40), (480, 1039))
+
+    def test_offset_monitors_of_different_sizes(self):
+        rects = [LAPTOP, WIDE]
+        # each monitor's own left edge counts; the edge between them does not
+        self.assertEqual(self.spans(rects, "left"), [(-791, -1440, 0), (0, 0, 900)])
+        self.assertEqual(self.spans(rects, "top"), [(-1440, -791, 2649)])
+        self.assertEqual(self.spans(rects, "bottom"), [(0, -791, 0), (900, 0, 1600), (0, 1600, 2649)])
+        edges = outer_edges(rects)
+        self.assertIsNotNone(along_edge(edges["left"], "left", 0, 450, 2))  # the laptop's left edge
+        self.assertIsNone(along_edge(edges["top"], "top", 800, 0, 2))  # under the wide monitor
+        self.assertAlmostEqual(along_edge(edges["left"], "left", -791, -720, 2), 720 / 2340)
+        # the pointer comes back onto a monitor, never into the corner of the box no monitor covers
+        for frac in (0.0, 0.3, 0.62, 0.8, 0.999):
+            x, y = point_on_edge(edges["left"], "left", frac, 40)
+            self.assertTrue(any(l <= x < r and t <= y < b for l, t, r, b in rects), (frac, x, y))  # noqa: E741
+            self.assertAlmostEqual(along_edge(edges["left"], "left", x - 38, y, 2), frac, delta=0.001)
+
+    def test_side_by_side_different_heights(self):
+        rects = [(0, 0, 1920, 1080), (1920, 0, 4480, 1440)]
+        self.assertEqual(self.spans(rects, "right"), [(4480, 0, 1440)])
+        self.assertEqual(self.spans(rects, "bottom"), [(1080, 0, 1920), (1440, 1920, 4480)])
+        # the stretch of the big monitor's left edge below the small one is an outer edge
+        self.assertEqual(self.spans(rects, "left"), [(0, 0, 1080), (1920, 1080, 1440)])
+
+    def test_stacked_gap_mirrored(self):
+        self.assertEqual(self.spans([(0, 0, 1920, 1080), (0, 1080, 1920, 2160)], "top"), [(0, 0, 1920)])
+        gap = [(0, 0, 1920, 1080), (2000, 0, 3920, 1080)]
+        self.assertEqual(self.spans(gap, "right"), [(1920, 0, 1080), (3920, 0, 1080)])
+        self.assertEqual(self.spans([(0, 0, 1920, 1080)] * 2, "left"), [(0, 0, 1080)])
+
+    def test_pieces_split_a_span_across_monitors(self):
+        edges = outer_edges([LAPTOP, WIDE])
+        # the middle third of the left side: the bottom of the wide monitor and the top of the laptop
+        self.assertEqual([(i, round(a0), round(a1)) for _, a0, a1, i in pieces(edges["left"], 0.5, 0.8)],
+                         [(1, -270, 0), (0, 0, 432)])
+
+    def test_rotated_and_scaled_monitors_from_hyprland(self):
+        hypr = Hyprland.__new__(Hyprland)
+        hypr.rects, hypr.rects_t = None, 0.0
+        hypr.request = lambda _cmd: json.dumps([
+            {"x": 0, "y": 0, "width": 1920, "height": 1080, "scale": 1.2, "transform": 0},
+            {"x": 1600, "y": 0, "width": 2560, "height": 1440, "scale": 1, "transform": 1}])
+        self.assertEqual(hypr.layout(), [(0, 0, 1600, 900), (1600, 0, 3040, 2560)])
+
+
+class MultiMonitorHandoff(unittest.TestCase):
+    def test_left_zone_on_the_laptop_and_back_onto_a_monitor(self):
+        phone = FakePhone()
+        phone.zone, phone.address, phone.require_near = "left", "AA", False
+        bridge = make_bridge(phone)
+        bridge.on_phone = False
+        bridge.fleet = types.SimpleNamespace(connected=lambda: [phone])
+        bridge.handoff = h = Handoff(bridge, bridge.fleet, None, FakeCompositor([LAPTOP, WIDE], (0, 450)))
+        entered = []
+        h.enter = lambda p, edge, frac: entered.append((edge, round(frac, 3)))
+        with mock.patch.object(config, "SWITCH_DELAY_S", 0):
+            h.pc_motion(-(config.EDGE_PUSH_MM + 1), 0)  # pushing left off the laptop, below the wide one
+        self.assertEqual(entered, [("left", round((1440 + 450) / 2340, 3))])
+        bridge.on_phone, h.edge = True, "left"
+        h.vy = phone.size()[1] * 0.2  # leaving the device's right side high up: the wide monitor
+        h.leave()
+        x, y = h.comp.warped
+        self.assertEqual(x, -791 + config.RETURN_INSET_PX)
+        self.assertAlmostEqual(y, -1440 + 0.2 * 2340, delta=1)
+
+
+class SpanHandoff(unittest.TestCase):
+    def test_device_beside_the_laptop_maps_onto_its_own_stretch(self):
+        """iPhone against the laptop's left edge (under a wider monitor): its whole height is the laptop's
+        stretch of the left side, going in and coming back."""
+        phone = FakePhone()
+        phone.zone, phone.span = "left", (1440 / 2340, 1.0)  # the laptop's part of the left side
+        bridge = make_bridge(phone)
+        h = bridge.handoff = Handoff(bridge, None, None, FakeCompositor([LAPTOP, WIDE]))
+        h.edge, h.entry_frac = "left", (1440 + 450) / 2340  # pushed off the laptop at half its height
+        h.on_enter()
+        drain(bridge)
+        self.assertAlmostEqual(h.vy / phone.size()[1], 0.5, places=2)
+        h.vy = 0.05 * phone.size()[1]  # leaving the iPhone near its top
+        h.leave()
+        x, y = h.comp.warped
+        self.assertEqual(x, config.RETURN_INSET_PX)  # on the laptop, not on the wide monitor above
+        self.assertAlmostEqual(y, 0.05 * 900, delta=2)
+
+
+class ThreeFingerSwitch(unittest.TestCase):
+    def swipe(self, on_phone):
+        """Three fingers 30 mm to the right, then lifted: (buttons clicked and devices cycled mid-swipe,
+        devices cycled once the fingers are up)."""
+        bridge, _phone, _mouse = make_mouse_bridge(on_phone=on_phone)
+        events = []
+        bridge.cycle = lambda step: events.append(("cycle", step))
+        bridge.click = lambda bit: events.append(("click", bit))
+        tp = make_touchpad()
+        tp.three, tp.three_done, tp.three_step = None, False, 0
+        for dx in (0, 10, 20, 30):
+            tp.contacts = {i: [10 * i + dx, 5] for i in range(3)}
+            bridge.three_finger_switch(tp)
+        during = list(events)
+        tp.contacts = {}
+        bridge.three_finger_switch(tp)
+        return during, events[len(during):]
+
+    def test_on_a_device_opens_its_app_switcher(self):
+        self.assertEqual(self.swipe(on_phone=True), ([("click", config.SWIPE_SIDE_BUTTON)], []))
+
+    def test_on_the_pc_the_swipe_is_the_compositors(self):
+        self.assertEqual(self.swipe(on_phone=False), ([], []))
+        with mock.patch("side_control.backend.bridge.THREE_FINGER_FROM_PC", True):
+            # and the switch waits for the fingers: the touchpad must not change hands mid-swipe
+            self.assertEqual(self.swipe(on_phone=False), ([], [("cycle", 1)]))
 
 
 class HideCursor(unittest.TestCase):
