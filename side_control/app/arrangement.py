@@ -3,7 +3,10 @@
 
 from gi.repository import Adw, Gdk, Gtk, Pango
 
-from .geometry import CANVAS_H, CANVAS_W, SH, SW, SX, SY, TILE, crossings, snap, spread
+from .geometry import (
+    CANVAS_H, CANVAS_W, SH, SW, SX, SY, TILE, crossings, indicator_rects, screen_edges,
+    screen_layout, snap, spread,
+)
 from .widgets import device_icon
 
 
@@ -30,6 +33,8 @@ class ArrangementView(Gtk.Fixed):
         self.on_moved = on_moved
         self.tiles = {}  # address -> DeviceTile
         self.indicators = []
+        self.monitors = []  # one tile per monitor, when there are several
+        self.edges = screen_edges([(SX, SY, SX + SW, SY + SH)])
         self.dragging = None
         self.anim = None
 
@@ -44,19 +49,47 @@ class ArrangementView(Gtk.Fixed):
         self.empty = Gtk.Label(label="Pair a device to arrange it", css_classes=["dim-label", "caption"])
         self.empty.set_size_request(CANVAS_W, -1)
         self.put(self.empty, 0, CANVAS_H - 34)
-        self.connect("realize", lambda _w: self.show_resolution())
+        self.show_monitors()
+        Gdk.Display.get_default().get_monitors().connect("items-changed", lambda *_: self.monitors_changed())
         drag = Gtk.GestureDrag()  # on the canvas: offsets measured on a moving tile would jitter
         drag.connect("drag-begin", self.on_drag_begin)
         drag.connect("drag-update", self.on_drag_update)
         drag.connect("drag-end", self.on_drag_end)
         self.add_controller(drag)
 
-    def show_resolution(self):
-        monitors = Gdk.Display.get_default().get_monitors()
-        if monitors.get_n_items():
-            monitor = monitors.get_item(0)
-            geo, scale = monitor.get_geometry(), monitor.get_scale()
-            self.resolution.set_label(f"{round(geo.width * scale)} × {round(geo.height * scale)}")
+    def show_monitors(self):
+        """One screen tile for one monitor; with several, each drawn where it is in the layout."""
+        for tile in self.monitors:
+            self.remove(tile)
+        self.monitors = []
+        monitors = list(Gdk.Display.get_default().get_monitors())
+        if not monitors:
+            return
+        geos = [m.get_geometry() for m in monitors]
+        rects = [(g.x, g.y, g.x + g.width, g.y + g.height) for g in geos]
+        self.edges = screen_edges(rects)
+        self.screen.set_visible(len(monitors) == 1)
+        resolution = lambda m, g: f"{round(g.width * m.get_scale())} × {round(g.height * m.get_scale())}"  # noqa: E731
+        if len(monitors) == 1:
+            self.resolution.set_label(resolution(monitors[0], geos[0]))
+            return
+        below = self.screen
+        for monitor, geo, (left, top, right, bottom) in zip(monitors, geos, screen_layout(rects)):
+            tile = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["screen-tile", "monitor-tile"],
+                           tooltip_text=monitor.get_description() or monitor.get_connector())
+            tile.set_size_request(round(right - left) - 2, round(bottom - top) - 2)  # a gap between them
+            tile.append(Gtk.Label(label=monitor.get_connector() or "Monitor", css_classes=["heading"],
+                                  vexpand=True, valign=Gtk.Align.END, ellipsize=Pango.EllipsizeMode.END))
+            tile.append(Gtk.Label(label=resolution(monitor, geo), css_classes=["caption", "dim-label"],
+                                  vexpand=True, valign=Gtk.Align.START, ellipsize=Pango.EllipsizeMode.END))
+            self.put(tile, left + 1, top + 1)
+            tile.insert_after(self, below)  # under the tiles
+            below = tile
+            self.monitors.append(tile)
+
+    def monitors_changed(self):
+        self.show_monitors()
+        self.on_moved()
 
     def add(self, address, form, cfg):
         tile = DeviceTile(address, form, cfg)
@@ -84,14 +117,15 @@ class ArrangementView(Gtk.Fixed):
         self.indicators = []
         spans = crossings({a: (t.form, t.cfg) for a, t in self.tiles.items() if a in active}, corner_dead)
         if self.dragging is None:
-            for rects, _span in spans.values():
-                for x, y, w, h in rects:
+            below = self.monitors[-1] if self.monitors else self.screen
+            for address, (_rects, span) in spans.items():
+                for x, y, w, h in indicator_rects(self.tiles[address].cfg["edge"], span, self.edges):
                     if w <= 0 or h <= 0:
                         continue
                     bar = Gtk.Box(css_classes=["edge-indicator"], can_target=False)
                     bar.set_size_request(round(w), round(h))
                     self.put(bar, x, y)
-                    bar.insert_after(self, self.screen)  # under the tiles
+                    bar.insert_after(self, below)  # under the tiles
                     self.indicators.append(bar)
         return {a: span for a, (_rects, span) in spans.items()}
 

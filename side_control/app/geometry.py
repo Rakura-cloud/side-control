@@ -2,6 +2,7 @@
 """The arrangement canvas: where tiles snap, and where the pointer crosses to each device.
 Ported from the design; no GTK, so it can be tested on its own."""
 
+from ..monitors import outer_edges, pieces
 
 OPPOSITE = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
 
@@ -108,3 +109,36 @@ def edge_segments(zone, span):
     along_side = (0.0, c) if vertical == "top" else (1 - c, 1.0)
     along_top = (0.0, c) if horizontal == "left" else (1 - c, 1.0)
     return [(horizontal, *along_side), (vertical, *along_top)]
+
+
+def to_canvas(rects):
+    """(x, y) functions from layout pixels to canvas pixels: the monitors' bounding box fills the screen
+    area, so a span along one of its sides is the same fraction as along the monitors' outer edges."""
+    left, top = min(r[0] for r in rects), min(r[1] for r in rects)
+    sx, sy = SW / max(1, max(r[2] for r in rects) - left), SH / max(1, max(r[3] for r in rects) - top)
+    return (lambda x: SX + (x - left) * sx), (lambda y: SY + (y - top) * sy)
+
+
+def screen_layout(rects):
+    """The monitors [(left, top, right, bottom)] in layout pixels, drawn in the screen area."""
+    fx, fy = to_canvas(rects)
+    return [(fx(left), fy(top), fx(right), fy(bottom)) for left, top, right, bottom in rects]
+
+
+def screen_edges(rects):
+    """The monitors' outer edges (monitors.outer_edges), in canvas pixels."""
+    fx, fy = to_canvas(rects)
+    return {side: [(fx(f), fy(a0), fy(a1), i) if side in ("left", "right") else (fy(f), fx(a0), fx(a1), i)
+                   for f, a0, a1, i in segs]
+            for side, segs in outer_edges(rects).items()}
+
+
+def indicator_rects(zone, span, edges):
+    """[(x, y, w, h)] lines on the canvas where the pointer crosses to a device: on the outer edges, as
+    on the real screens. edges: screen_edges()"""
+    out = []
+    for side, lo, hi in edge_segments(zone, span):
+        for f, a0, a1, _ in pieces(edges[side], lo, hi):
+            out.append({"left": (f - 1, a0, 4, a1 - a0), "right": (f - 3, a0, 4, a1 - a0),
+                        "top": (a0, f - 1, a1 - a0, 4), "bottom": (a0, f - 3, a1 - a0, 4)}[side])
+    return out
