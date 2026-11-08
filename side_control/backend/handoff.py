@@ -145,6 +145,11 @@ class Handoff:
                 else:
                     self.push[key] = 0.0
 
+    @staticmethod
+    def reach(phone, edge):
+        """(lo, hi): the stretch of the PC edge beside the device, which its whole side maps onto."""
+        return phone.span if phone.span and phone.zone == edge else (0.0, 1.0)
+
     def enter(self, phone, edge, frac):
         self.edge, self.entry_frac = edge, frac
         self.bridge.switch_to(phone)
@@ -161,7 +166,8 @@ class Handoff:
             self.edge = handoff_exits(phone.zone)[0][0]
             self.entry_frac = sum(phone.span) / 2 if phone.span and phone.zone in OPPOSITE else 0.5
         w, h = phone.size()
-        frac = self.entry_frac
+        lo, hi = self.reach(phone, self.edge)
+        frac = max(0.0, min(1.0, (self.entry_frac - lo) / max(1e-6, hi - lo)))  # along the device's side
         # the pointer enters through the device side opposite to the PC edge it left by; pin it into
         # the nearer corner of that side first (the device clamps at its screen edges), then glide
         # along the side. Sent in one burst, iOS pointer acceleration would carry the pointer much
@@ -206,6 +212,8 @@ class Handoff:
         edge, back = self.edge, OPPOSITE[self.edge]
         w, h = self.bridge.phone.size()
         frac = (self.vy / h) if back in ("left", "right") else (self.vx / w)
+        lo, hi = self.reach(self.bridge.phone, edge)
+        frac = lo + frac * (hi - lo)  # back beside the device, not anywhere along the edge
         self.bridge.switch_to(None)  # -> PC; on_leave() clears the state
         edges = self.edges()
         if not edges or not edges[edge]:

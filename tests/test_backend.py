@@ -424,6 +424,25 @@ class MultiMonitorHandoff(unittest.TestCase):
         self.assertAlmostEqual(y, -1440 + 0.2 * 2340, delta=1)
 
 
+class SpanHandoff(unittest.TestCase):
+    def test_device_beside_the_laptop_maps_onto_its_own_stretch(self):
+        """iPhone against the laptop's left edge (under a wider monitor): its whole height is the laptop's
+        stretch of the left side, going in and coming back."""
+        phone = FakePhone()
+        phone.zone, phone.span = "left", (1440 / 2340, 1.0)  # the laptop's part of the left side
+        bridge = make_bridge(phone)
+        h = bridge.handoff = Handoff(bridge, None, None, FakeCompositor([LAPTOP, WIDE]))
+        h.edge, h.entry_frac = "left", (1440 + 450) / 2340  # pushed off the laptop at half its height
+        h.on_enter()
+        drain(bridge)
+        self.assertAlmostEqual(h.vy / phone.size()[1], 0.5, places=2)
+        h.vy = 0.05 * phone.size()[1]  # leaving the iPhone near its top
+        h.leave()
+        x, y = h.comp.warped
+        self.assertEqual(x, config.RETURN_INSET_PX)  # on the laptop, not on the wide monitor above
+        self.assertAlmostEqual(y, 0.05 * 900, delta=2)
+
+
 class HideCursor(unittest.TestCase):
     """Hyprland.hide_cursor against a fake IPC socket: only a pointer it hid is shown again."""
 
