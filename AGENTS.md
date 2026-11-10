@@ -35,7 +35,9 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 | `config.py` | Paths, defaults, the settings file, Launch at Login, `BACKEND_COMMAND` (differs inside the AppImage), `SERVICE`. |
 | `system.py` | bluetoothd's plugins, whether the service is installed and the root commands that install it, adapter names, Hyprland IPC. |
 | `backend_link.py` | `Backend`: the socket client, reconnects by itself. |
+| `clipboard.py` | `ClipboardServer` behind Share Clipboard: the HTTP server the device's Shortcut talks to, and the setup code (address + token) its QR holds. |
 | `geometry.py` | Arrangement maths, ported from the design. No GTK: tested in `tests/test_geometry.py`. |
+| `qrcode.py` | The QR encoder (byte mode, error correction M, versions 1 to 10): tested in `tests/test_qrcode.py`. |
 | `arrangement.py`, `widgets.py`, `overlay.py`, `tray.py` | The canvas, shared widgets, the edge indicator, the tray icon and menu. |
 | `style.css` | The app's CSS. |
 

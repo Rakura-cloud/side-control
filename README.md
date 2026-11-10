@@ -36,12 +36,17 @@ the phone or tablet: it sees an ordinary Bluetooth keyboard and mouse.
 - **Cursor out of the way.** While a device has control, the computer's cursor is hidden (Hyprland); it
   comes back where you return. Turn it off in Appearance.
 - **Tray icon.** Shows where the cursor is and switches between devices (StatusNotifierItem, e.g. Waybar).
+- **Clipboard over the network.** Turn on Share Clipboard and scan two QR codes with the iPhone camera
+  to add the **Side Control Shortcut** ([docs/shortcuts.md](docs/shortcuts.md)): it sends and gets the
+  clipboard and returns the pointer to the computer, and the app can type its clipboard on the device.
+  It runs only when it is started on the device (Action Button, Back Tap, Siri, share sheet or widget).
 - **Pairing and device info.** Pair from the app; see each device's OS version and battery.
 
 | | |
 |---|---|
 | ![Layout](docs/screenshots/layout.png) | ![Gestures & Keybindings](docs/screenshots/gestures.png) |
 | ![Appearance](docs/screenshots/appearance.png) | ![Settings](docs/screenshots/settings.png) |
+| ![Add to iPhone](docs/screenshots/add-to-iphone.png) | ![Setup Guide](docs/screenshots/guide.png) |
 
 ## Install
 
@@ -170,7 +175,10 @@ Mouse Scrolling** turns them the other way), and its back / forward buttons are 
 - **Swipes and pinches are imitated.** A mouse cannot swipe or pinch on iOS, so a swipe is a short,
   quick drag (one page per swipe; apps that need a longer swipe may not react) and pinching uses the
   Accessibility Zoom shortcuts.
-- **Share Clipboard** is a saved setting only: a Bluetooth keyboard and mouse cannot carry a clipboard.
+- **Share Clipboard needs the Side Control Shortcut on the device**
+  ([docs/shortcuts.md](docs/shortcuts.md)): a Bluetooth keyboard and mouse cannot carry a clipboard,
+  so text travels over the network, and only when the Shortcut is started on the device (Action
+  Button, Back Tap, Siri, share sheet or widget) — not by itself. Text only, no images or files.
 - **Shake to Locate** enlarges the computer's cursor (Hyprland only); the device's pointer is not
   affected.
 - Shortcuts reach your compositor too, since the keyboard is only taken over while a device has the
@@ -182,7 +190,8 @@ Side Control is two programs that talk JSON over the unix socket `$XDG_RUNTIME_D
 
 - **The app** ([`side_control/app/`](side_control/app/), started by `./side-control`) is the GTK window,
   tray icon and edge indicator, running as you. Settings are stored in
-  `~/.config/side-control/settings.json`.
+  `~/.config/side-control/settings.json`. With Share Clipboard on, it also runs a small HTTP server
+  (port 47913) that the device's Shortcut talks to.
 - **The backend** ([`side_control/backend/`](side_control/backend/), started by
   `./side-control-backend`) runs as you, through a system service (see [Permissions](#permissions)).
   It registers a Bluetooth HID keyboard and mouse with BlueZ, reads your keyboard and touchpad with
