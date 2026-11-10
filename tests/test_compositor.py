@@ -17,6 +17,7 @@ from side_control.backend.compositor import (  # noqa: E402
     CURSOR_PATH,
     CURSOR_SCRIPT,
     SCRIPT_PLUGIN,
+    SHELL_TIMEOUT_S,
     Compositor,
     CursorReceiver,
     Hyprland,
@@ -161,7 +162,8 @@ class FakeShell:
         return self
 
     def get_dbus_method(self, method, interface):
-        def call(*args):
+        def call(*args, timeout=None):
+            self.timeout = timeout
             if not self.present:
                 raise dbus.DBusException("no such name")
             if method == "GetCursor":
@@ -228,6 +230,7 @@ class MutterExtension(unittest.TestCase):
         comp = Mutter()
         with mock.patch("side_control.backend.compositor.dbus.SessionBus", return_value=shell):
             self.assertEqual(comp.cursor(), (640, 400))
+            self.assertEqual(shell.timeout, SHELL_TIMEOUT_S)  # a stuck Shell must not stall input
             self.assertTrue(comp.warp(100.4, 200.6))
             self.assertEqual(shell.warped, (100, 201))
             self.assertTrue(comp.available)
@@ -315,7 +318,8 @@ class KWinCursorScript(unittest.TestCase):
 
     def test_load_and_run(self):
         comp, kwin = self.start()
-        self.assertEqual(kwin.calls, [("/Scripting", "loadScript", (CURSOR_SCRIPT, SCRIPT_PLUGIN)),
+        self.assertEqual(kwin.calls, [("/Scripting", "unloadScript", (SCRIPT_PLUGIN,)),  # a stale one
+                                      ("/Scripting", "loadScript", (CURSOR_SCRIPT, SCRIPT_PLUGIN)),
                                       ("/Scripting/Script7", "run", ())])  # KWin 6's script object
         self.assertEqual(kwin.exported, CURSOR_PATH)  # what the script reports to
         self.assertEqual(comp.script, 7)

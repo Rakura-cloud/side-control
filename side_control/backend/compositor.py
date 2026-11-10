@@ -25,6 +25,7 @@ CURSOR_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 SCRIPT_PLUGIN = "side-control-cursor"  # the script's plugin name for KWin's loadScript/unloadScript
 SHELL_SERVICE = "io.github.sidecontrol.Shell"  # the GNOME Shell extension's D-Bus service
 SHELL_PATH = "/io/github/sidecontrol/Shell"
+SHELL_TIMEOUT_S = 0.25  # cursor() runs on every touchpad report: a stuck Shell must not stall input
 
 
 class Compositor:
@@ -251,7 +252,7 @@ class Mutter(Compositor):
     def cursor(self):
         """(x, y) of the PC pointer from the extension; None when it is not running."""
         try:
-            x, y = self.shell("GetCursor")()
+            x, y = self.shell("GetCursor")(timeout=SHELL_TIMEOUT_S)
             return int(x), int(y)
         except (dbus.DBusException, TypeError, ValueError):
             return None
@@ -259,7 +260,7 @@ class Mutter(Compositor):
     def warp(self, x, y):
         """Move the PC pointer through the extension; False when it is not running."""
         try:
-            self.shell("Warp")(int(round(x)), int(round(y)))
+            self.shell("Warp")(int(round(x)), int(round(y)), timeout=SHELL_TIMEOUT_S)
             return True
         except (dbus.DBusException, TypeError):
             return False
@@ -367,6 +368,7 @@ class KWin(Compositor):
         """Load the cursor script into KWin and start it, as its script id; None when KWin is not
         there or would not take it. KWin 6 runs the script object at /Scripting/Script<id>, KWin 5
         at /<id> (scripting/scripting.cpp)."""
+        self.unload_script()  # one left by a backend that was killed: KWin would refuse the name
         try:
             scripting = self.bus.get_object("org.kde.KWin", "/Scripting")
             load = scripting.get_dbus_method("loadScript", "org.kde.kwin.Scripting")
