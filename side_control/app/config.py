@@ -12,6 +12,8 @@ from gi.repository import GLib
 
 APP_ID = APP_ICON = "io.github.sidecontrol.SideControl"  # data/icons/<APP_ICON>.svg, -symbolic for the tray
 ISSUES_URL = "https://github.com/Rakura-cloud/side-control/issues"  # where "Report an Issue" leads
+RELEASES_URL = "https://api.github.com/repos/Rakura-cloud/side-control/releases"  # where the update check looks
+RELEASES_PAGE = "https://github.com/Rakura-cloud/side-control/releases"  # release notes, when the API gives none
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # side_control/
 ROOT = os.path.dirname(PACKAGE)  # where the side-control and side-control-backend launchers are
 LAUNCHER = os.path.join(ROOT, "side-control")
@@ -48,7 +50,7 @@ DEFAULTS = {"share_cursor": True, "share_clipboard": True, "switch_delay_ms": 15
             "indicator": "near", "indicator_within": 48, "indicator_names": True,
             "indicator_style": "Standard", "indicator_color": None, "hide_cursor": True,
             "run_in_background": True, "visible": False, "device_name": None, "adapter": None,
-            "hid_banner_dismissed": False}
+            "check_updates": True, "hid_banner_dismissed": False}
 # The edge indicator's styles: name -> (shape, thickness in px, opacity in %).
 INDICATOR_STYLES = {"Subtle": ("solid", 2, 60), "Standard": ("solid", 4, 100), "Bold": ("solid", 8, 100),
                     "Glow": ("glow", 6, 90)}

@@ -37,11 +37,14 @@ the phone or tablet: it sees an ordinary Bluetooth keyboard and mouse.
   comes back where you return. Turn it off in Appearance.
 - **Tray icon.** Shows where the cursor is and switches between devices (StatusNotifierItem, e.g. Waybar).
 - **Pairing and device info.** Pair from the app; see each device's OS version and battery.
+- **Updates.** Side Control looks for a new version on GitHub once a day and says so in a banner; an
+  AppImage downloads it in place and restarts into it.
 
 | | |
 |---|---|
 | ![Layout](docs/screenshots/layout.png) | ![Gestures & Keybindings](docs/screenshots/gestures.png) |
 | ![Appearance](docs/screenshots/appearance.png) | ![Settings](docs/screenshots/settings.png) |
+| ![Update](docs/screenshots/update.png) | |
 
 ## Install
 

@@ -191,6 +191,8 @@ class PagesMixin:
         general.add(self.login_row)
         general.add(self.switch_row("run_in_background", "Run in Background",
                                     "Keep devices connected when the window is closed"))
+        general.add(self.switch_row("check_updates", "Check for Updates",
+                                    "Look for a new version of Side Control once a day", self.check_updates))
         page.add(general)
 
         bluetooth = Adw.PreferencesGroup(title="Bluetooth")
