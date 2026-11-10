@@ -56,7 +56,8 @@ chmod +x Side_Control-*-x86_64.AppImage
 ```
 
 It bundles Python, GTK and everything else it needs, so it runs on any x86_64 distribution. Your system
-still needs what Side Control talks to: BlueZ, polkit, and Hyprland for edge hand-off (see below).
+still needs what Side Control talks to: BlueZ, polkit, and a compositor that says where the cursor is
+(Hyprland, for edge hand-off; see [Desktops](#desktops)).
 
 #### Dev build
 
@@ -117,8 +118,8 @@ Needed by the AppImage too:
 - **Linux with BlueZ** and a Bluetooth adapter (Bluetooth Classic, which nearly all have).
 - **systemd and polkit** (`pkexec`): the backend runs as a system service, as you, and Side Control
   installs that service once through `pkexec` (see [Permissions](#permissions)).
-- **Hyprland** for edge hand-off: Side Control asks it where the cursor is. On other compositors
-  everything else works, and you switch with the shortcuts instead.
+- **A Wayland desktop**: Hyprland, niri, KDE or GNOME, each with less than the one before (see
+  [Desktops](#desktops)).
 
 Bundled in the AppImage, needed when running from source:
 
@@ -133,6 +134,33 @@ On Arch Linux:
 sudo pacman -S python python-gobject python-cairo python-dbus python-evdev gtk4 libadwaita \
     bluez bluez-utils polkit gtk4-layer-shell
 ```
+
+### Desktops
+
+What works on each desktop:
+
+| | Hyprland | niri | KDE | GNOME |
+|---|---|---|---|---|
+| Switching by shortcut, gesture or from the app | yes | yes | yes | yes |
+| Monitors (the hand-off geometry) | yes | yes | yes | yes |
+| Edge hand-off (push the cursor off the edge) | yes | no | no | no |
+| The cursor comes back at the edge | yes | no | no | no |
+| PC pointer hidden while a device has control | yes | no | no | no |
+| Edge indicator (follows the cursor) | yes | edges only¹ | edges only¹ | no² |
+| Shake to Locate (enlarges the cursor) | yes | no | no | no |
+
+Hyprland is the only compositor that says where the cursor is and moves it on request (its IPC
+socket). niri's IPC has no pointer position and no way to move the pointer, and KDE and GNOME would
+need a KWin script or a GNOME Shell extension for either, so there you switch with the shortcuts or
+from the app instead of by pushing the cursor off an edge. The monitor layout comes from each
+compositor (Hyprland's IPC, niri's IPC, `kscreen-doctor -j` on KDE, Mutter's
+`org.gnome.Mutter.DisplayConfig` on GNOME).
+
+¹ The indicator draws the edges, but "Near" mode needs the cursor position to follow it. ² It also
+needs gtk4-layer-shell, which GNOME does not have.
+
+Verified on Hyprland only so far. The niri, KDE and GNOME code paths are tested against fake replies
+of their documented interfaces, but have not been run on those desktops yet.
 
 ## Usage
 
