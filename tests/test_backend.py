@@ -284,6 +284,20 @@ class ReportMap(unittest.TestCase):
         self.assertEqual(bits, {1: 64, 2: 40})
 
 
+class TypeText(unittest.TestCase):
+    def test_types_presses_and_releases_on_a_us_layout(self):
+        """Each character is a press and a release that restores the keys really held; a character
+        without a key (é) is skipped."""
+        phone = FakePhone()
+        bridge = make_bridge(phone)
+        bridge.keys.append(4)  # held while typing, and back after every character
+        bridge.type_on(phone, "Hi!\té")
+        presses = [(payload[0], payload[2]) for rid, payload in phone.raw if rid == 1]
+        self.assertEqual(presses, [(2, 11), (0, 4), (0, 12), (0, 4),
+                                   (2, 30), (0, 4), (0, 43), (0, 4)])
+        self.assertIs(bridge.phone, phone)
+
+
 class ScreenSize(unittest.TestCase):
     def phone(self, model, vendor=0x004C):
         phone = Phone(0, "AA:BB:CC:DD:EE:FF", "device")

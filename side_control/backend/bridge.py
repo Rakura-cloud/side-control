@@ -45,7 +45,7 @@ from .config import (
 )
 from .devices import NO_PHONE
 from .events import EVENTS, log
-from .hid import BUTTONS, FINGERS, KEYMAP, MODS, disable_sniff
+from .hid import BUTTONS, FINGERS, KEYMAP, MODS, TYPEMAP, disable_sniff
 from .inputs import Accel, Shake, Touchpad, is_touchpad, scan_inputs
 
 
@@ -372,6 +372,17 @@ class Bridge:
         keep, self.phone = self.phone, phone
         try:
             self.click(bit)
+        finally:
+            self.phone = keep
+
+    def type_on(self, phone, text):
+        """Type `text` on a specific device as keystrokes (the GUI's "Type Clipboard on Device")."""
+        keep, self.phone = self.phone, phone
+        try:
+            for char in text:
+                key = TYPEMAP.get(char)
+                if key:
+                    self.tap_key(*key)
         finally:
             self.phone = keep
 

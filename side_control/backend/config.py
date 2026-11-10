@@ -13,6 +13,8 @@ TOGGLE = {e.KEY_LEFTCTRL, e.KEY_LEFTALT, e.KEY_P}
 # in AssistiveTouch > Devices > (this PC) > Customize Additional Buttons.
 ACTION_MODS = {e.KEY_LEFTCTRL, e.KEY_LEFTALT}
 ACTIONS = {e.KEY_H: 0x08, e.KEY_C: 0x10, e.KEY_N: 0x20, e.KEY_S: 0x40}  # buttons 4-7
+TYPE_MAX = 256  # "Type Clipboard on Device" stops here: every character is two HID reports, and a
+                # long paste would flood the link while the device types at its own speed
 # (modifiers held, key, action) - Side Control's shortcuts. The PC's keyboard is not grabbed while the
 # PC has control, so the compositor sees these too.
 HOTKEYS = [({"super", "shift"}, e.KEY_S, "toggle_sharing"),

@@ -88,6 +88,20 @@ MODS = {
     e.KEY_LEFTCTRL: 0x01, e.KEY_LEFTSHIFT: 0x02, e.KEY_LEFTALT: 0x04, e.KEY_LEFTMETA: 0x08,
     e.KEY_RIGHTCTRL: 0x10, e.KEY_RIGHTSHIFT: 0x20, e.KEY_RIGHTALT: 0x40, e.KEY_RIGHTMETA: 0x80,
 }
+# ASCII character -> (modifier bits, HID usage), US layout: what the GUI's "Type Clipboard on Device"
+# types. Anything without an entry (accents, emoji, ...) is skipped: HID has no simple code for it.
+TYPEMAP = {"\n": (0, 40), "\r": (0, 40), "\t": (0, 43), " ": (0, 44)}
+for i, c in enumerate("abcdefghijklmnopqrstuvwxyz"):
+    TYPEMAP[c] = (0, 4 + i)
+    TYPEMAP[c.upper()] = (0x02, 4 + i)
+for i, c in enumerate("1234567890"):
+    TYPEMAP[c] = (0, 30 + i)
+for plain, shifted, usage in (("-", "_", 45), ("=", "+", 46), ("[", "{", 47), ("]", "}", 48),
+                              ("\\", "|", 49), (";", ":", 51), ("'", '"', 52), ("`", "~", 53),
+                              (",", "<", 54), (".", ">", 55), ("/", "?", 56)):
+    TYPEMAP[plain], TYPEMAP[shifted] = (0, usage), (0x02, usage)
+for i, c in enumerate("!@#$%^&*()"):
+    TYPEMAP[c] = (0x02, 30 + i)
 # mouse side buttons (back / forward) are buttons 4 and 5, like Ctrl+Alt+H / C: AssistiveTouch can assign them
 BUTTONS = {e.BTN_LEFT: 1, e.BTN_RIGHT: 2, e.BTN_MIDDLE: 4, e.BTN_SIDE: 0x08, e.BTN_EXTRA: 0x10,
            e.BTN_BACK: 0x08, e.BTN_FORWARD: 0x10}

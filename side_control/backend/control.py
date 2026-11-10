@@ -21,6 +21,7 @@ from .config import (
     OPTIONS,
     PIN_EXTRA,
     SOCK_PATH,
+    TYPE_MAX,
 )
 from .events import EVENTS, log
 from .proximity import zone_for
@@ -38,6 +39,7 @@ class Control:
                       {"cmd": "set_handoff", "address": ..., "zone": ..., "require_near": ...,
                        "phone_w": ..., "phone_h": ..., "span": [lo, hi] | null}
                       {"cmd": "action", "address": ..., "key": "h"}   press the Ctrl+Alt+<key> button
+                      {"cmd": "type", "address": ..., "text": ...}    type text on a device as keys
                       {"cmd": "forget", "address": ...}   unpair a device
                       {"cmd": "set_options", "natural_scroll": true, ...}   see OPTIONS, plus
                        "device_name" (adapter alias), "discoverable" and "locked" (Scroll Lock)
@@ -154,6 +156,12 @@ class Control:
             if bit and phone.connected:
                 self.bridge.click_on(phone, bit)
                 log(f"GUI -> {phone.alias}: mouse button {bit.bit_length()}")
+        elif cmd == "type":
+            text = str(msg.get("text", ""))[:TYPE_MAX]
+            phone = self.fleet.phones.get(msg.get("address")) or self.bridge.phone
+            if text and phone.connected:
+                self.bridge.type_on(phone, text)
+                log(f"GUI -> {phone.alias}: typing {len(text)} characters")
 
     def set_adapter(self, prop, value):
         try:
