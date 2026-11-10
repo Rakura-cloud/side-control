@@ -37,6 +37,7 @@ CONFIG_DIR = os.path.join(GLib.get_user_config_dir(), "side-control")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "settings.json")
 AUTOSTART_PATH = os.path.join(GLib.get_user_config_dir(), "autostart", APP_ID + ".desktop")
 NO_INPUT_CONF = os.path.join(PACKAGE, "data", "bluetooth-no-input.conf")
+GNOME_EXTENSION = os.path.join(PACKAGE, "data", "gnome-shell", "side-control@sidecontrol.github.io")  # installed by system.install_gnome_extension()
 ICONS_DIR = os.path.join(PACKAGE, "data", "icons")  # the app icons, and the design's Material Symbols as sc-*
 CSS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "style.css")
 DROPIN_DIR = "/etc/systemd/system/bluetooth.service.d"

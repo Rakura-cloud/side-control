@@ -4,11 +4,12 @@ the session's compositor (Hyprland's IPC socket, the compositor's environment)."
 
 import os
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
 
-from .config import DROPIN_DIR, RULES_PATH, SERVICE_RULES, SERVICE_UNIT, UNIT_PATH
+from .config import DROPIN_DIR, GNOME_EXTENSION, RULES_PATH, SERVICE_RULES, SERVICE_UNIT, UNIT_PATH
 
 
 def hid_owned():
@@ -77,6 +78,24 @@ def setup_script():
     with open(SERVICE_UNIT) as unit, open(SERVICE_RULES) as rules:
         return " && ".join([install_file(unit.read(), UNIT_PATH), install_file(rules.read(), RULES_PATH),
                             "systemctl daemon-reload", "sleep 1"])  # polkitd picks up its new rule meanwhile
+
+
+def install_gnome_extension():
+    """Copy the GNOME Shell extension into the user's extensions directory and enable it: on
+    GNOME it is what says where the pointer is and moves it (backend/compositor.py, Mutter), the
+    shell keeping both to itself on Wayland. Raises OSError with what went wrong. On Wayland the
+    extension only loads after the next login."""
+    uuid = os.path.basename(GNOME_EXTENSION)
+    dest = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
+                        "gnome-shell", "extensions", uuid)
+    shutil.copytree(GNOME_EXTENSION, dest, dirs_exist_ok=True)
+    try:
+        run = subprocess.run(["gnome-extensions", "enable", uuid],
+                             capture_output=True, text=True, timeout=10)
+    except subprocess.SubprocessError as err:
+        raise OSError(None, str(err)) from err
+    if run.returncode:
+        raise OSError(None, run.stderr.strip() or f"gnome-extensions exited with {run.returncode}")
 
 
 def last_log_line(unit):
