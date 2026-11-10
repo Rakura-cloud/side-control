@@ -12,7 +12,7 @@ import dbus
 from gi.repository import GLib
 
 from . import config
-from .bluez import nearby_devices, paired_devices
+from .bluez import PairWatch, nearby_devices, pair_error_code, paired_devices
 from .config import (
     ACTIONS,
     CALIBRATE_MAX_S,
@@ -22,7 +22,7 @@ from .config import (
     PIN_EXTRA,
     SOCK_PATH,
 )
-from .events import EVENTS, log
+from .events import EVENTS, log, pair_step
 from .proximity import zone_for
 
 
@@ -44,7 +44,10 @@ class Control:
                       {"cmd": "discover", "on": true}   look for unpaired phones and tablets
                       {"cmd": "pair", "address": ...}   pair one of them
                       {"cmd": "quit"}
-    server -> client also: {"type": "paired", "address": ..., "ok": ..., "error": ...}
+    server -> client also: {"type": "paired", "address": ..., "ok": ..., "error": ...,
+                           "error_code": "not_found" | "rejected" | "timeout" | "exists" | "failed"}
+                           {"type": "pairing", "address": ..., "step": "searching" | "found" |
+                            "confirm" | "paired"}   how a pairing is going, for the pair dialog
                            {"type": "shake"}  the PC pointer was shaken
                            {"type": "open"}   Super+Alt+D: show the GUI
     """
@@ -55,12 +58,15 @@ class Control:
         self.discovering = False
         self.nearby, self.nearby_t = [], 0.0
         self.pairing = None
+        self.paired_seen = set()  # addresses already announced as paired, so one pairing says it once
         self.quit = False
         self.listener = None
         self.clients = {}  # socket -> unparsed input
         self.last_state = None
         self.last_state_t = 0.0
         self.calib = None  # {"phone", "axis", "t0", "sent"} while measuring a screen edge to edge
+        # a device that becomes paired (even from its own Bluetooth settings) is noticed at once
+        self.pair_watch = PairWatch(bus, adapter_path, self.note_paired) if bus is not None else None
 
     def start(self):
         try:
@@ -166,28 +172,46 @@ class Control:
         """Pair from this side (the device asks its user to confirm), then trust it and connect HID."""
         path = f"{self.adapter_path}/dev_{address.replace(':', '_')}"
         self.pairing = address
+        self.paired_seen.discard(address)  # this pairing announces itself again
+        pair_step(address, "searching")
 
         def done(error=None):
             self.pairing = None
             if error is None:
-                dbus.Interface(self.bus.get_object("org.bluez", path),
-                               "org.freedesktop.DBus.Properties").Set("org.bluez.Device1", "Trusted", True)
-                self.fleet.sync_paired(paired_devices(self.bus, self.adapter_path))
-                phone = self.fleet.phones.get(address)
-                if phone:
-                    phone.next_dial = 0.0
-                    self.fleet.dial_now = True
-                log(f"paired with {phone.alias if phone else address}")
+                self.note_paired(address)
             else:
                 log(f"pairing {address} failed: {error.get_dbus_message()}")
-            EVENTS.append({"type": "paired", "address": address, "ok": error is None,
-                           "error": None if error is None else error.get_dbus_message()})
+                EVENTS.append({"type": "paired", "address": address, "ok": False,
+                               "error_code": pair_error_code(error), "error": error.get_dbus_message()})
 
         def start():
+            pair_step(address, "found")
+            pair_step(address, "confirm")
             dbus.Interface(self.bus.get_object("org.bluez", path), "org.bluez.Device1").Pair(
                 reply_handler=done, error_handler=done, timeout=60)
             return False
         GLib.idle_add(start)  # on the GLib thread, which delivers the reply
+
+    def note_paired(self, address):
+        """A device became paired: trust it, put it in the fleet and say so at once, instead of on the
+        next reconnect pass. The Pair reply and BlueZ's Paired signal both end up here (once)."""
+        if address in self.paired_seen:
+            return
+        self.paired_seen.add(address)
+        path = f"{self.adapter_path}/dev_{address.replace(':', '_')}"
+        try:
+            dbus.Interface(self.bus.get_object("org.bluez", path),
+                           "org.freedesktop.DBus.Properties").Set("org.bluez.Device1", "Trusted", True)
+        except dbus.DBusException as err:
+            log(f"trusting {address} failed: {err.get_dbus_message()}")
+        self.fleet.sync_paired(paired_devices(self.bus, self.adapter_path))
+        phone = self.fleet.phones.get(address)
+        if phone:
+            phone.next_dial = 0.0
+            self.fleet.dial_now = True
+        log(f"paired with {phone.alias if phone else address}")
+        pair_step(address, "paired")
+        EVENTS.append({"type": "paired", "address": address, "ok": True})
 
     def forget(self, address):
         phone = self.fleet.phones.get(address)
@@ -198,6 +222,7 @@ class Control:
             self.bridge.switch_to(None)
         phone.close()
         del self.fleet.phones[address]
+        self.paired_seen.discard(address)  # pair it again and it is announced again
         if self.bus is not None:
             path = f"{self.adapter_path}/dev_{address.replace(':', '_')}"
             try:

@@ -11,7 +11,7 @@ import dbus.service
 from gi.repository import GLib
 
 from .config import NAME
-from .events import log
+from .events import log, pair_step
 from .hid import HID_UUID, SDP_RECORD
 
 
@@ -38,18 +38,23 @@ class Agent(dbus.service.Object):
         props.Set("org.bluez.Device1", "Trusted", True)
         log(f"paired/trusted {props.Get('org.bluez.Device1', 'Alias')}")
 
+    def authorize(self, device):
+        """A device asks to pair: its user is confirming it on the device right now."""
+        self.trust(device)
+        pair_step(address_of(device), "confirm")
+
     @dbus.service.method("org.bluez.Agent1", in_signature="", out_signature="")
     def Release(self):
         pass
 
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="s")
     def RequestPinCode(self, device):
-        self.trust(device)
+        self.authorize(device)
         return "0000"
 
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="u")
     def RequestPasskey(self, device):
-        self.trust(device)
+        self.authorize(device)
         return dbus.UInt32(0)
 
     @dbus.service.method("org.bluez.Agent1", in_signature="os", out_signature="")
@@ -62,11 +67,11 @@ class Agent(dbus.service.Object):
 
     @dbus.service.method("org.bluez.Agent1", in_signature="ou", out_signature="")
     def RequestConfirmation(self, device, passkey):
-        self.trust(device)
+        self.authorize(device)
 
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="")
     def RequestAuthorization(self, device):
-        self.trust(device)
+        self.authorize(device)
 
     @dbus.service.method("org.bluez.Agent1", in_signature="os", out_signature="")
     def AuthorizeService(self, device, uuid):
@@ -171,3 +176,72 @@ def nearby_devices(bus, adapter_path):
         found.append({"address": str(dev["Address"]), "name": name, "form": form,
                       "os": ("iPadOS" if form == "tablet" else "iOS") if apple else "Android"})
     return sorted(found, key=lambda d: d["name"].lower())
+
+
+def address_of(path):
+    """A BlueZ device path like ".../dev_AA_BB_CC_DD_EE_FF" as "AA:BB:CC:DD:EE:FF"."""
+    return str(path).rsplit("/dev_", 1)[-1].replace("_", ":")
+
+
+def pair_error_code(error):
+    """A pairing failure as one error code the app turns into plain English."""
+    name = error.get_dbus_name()
+    if name in ("org.bluez.Error.DoesNotExist", "org.bluez.Error.NotAvailable"):
+        return "not_found"  # out of range, or gone from BlueZ's list
+    if name in ("org.bluez.Error.AuthenticationRejected", "org.bluez.Error.AuthenticationCanceled",
+                "org.bluez.Error.AuthenticationFailed", "org.bluez.Error.Canceled",
+                "org.bluez.Error.Rejected"):
+        return "rejected"  # somebody said no on the device or here
+    if name in ("org.bluez.Error.Timeout", "org.freedesktop.DBus.Error.Timeout",
+                "org.freedesktop.DBus.Error.NoReply"):
+        return "timeout"
+    if name in ("org.bluez.Error.AlreadyExists", "org.bluez.Error.AlreadyPaired"):
+        return "exists"
+    return "failed"
+
+
+class PairWatch:
+    """Notices phones and tablets that become paired - even from the device's own Bluetooth settings -
+    and calls `on_paired(address)` the moment BlueZ says so, once per pairing. Runs on the GLib thread.
+    Self-contained: its own signal receivers and object reads, so nothing else has to know about it."""
+
+    def __init__(self, bus, adapter_path, on_paired):
+        self.bus, self.adapter_path, self.on_paired = bus, adapter_path, on_paired
+        self.paired = set()  # addresses already paired, so one pairing is reported once
+        for info in self.objects().values():
+            dev = info.get("org.bluez.Device1")
+            if dev and dev.get("Paired"):
+                self.paired.add(str(dev["Address"]))
+        bus.add_signal_receiver(self.interfaces_added, "InterfacesAdded",
+                                "org.freedesktop.DBus.ObjectManager", "org.bluez", "/")
+        bus.add_signal_receiver(self.interfaces_removed, "InterfacesRemoved",
+                                "org.freedesktop.DBus.ObjectManager", "org.bluez", "/")
+        bus.add_signal_receiver(self.properties_changed, "PropertiesChanged",
+                                "org.freedesktop.DBus.Properties", "org.bluez",
+                                path_keyword="path", arg0="org.bluez.Device1")
+
+    def objects(self):
+        return dbus.Interface(self.bus.get_object("org.bluez", "/"),
+                              "org.freedesktop.DBus.ObjectManager").GetManagedObjects()
+
+    def interfaces_added(self, path, interfaces):
+        self.check(path, interfaces.get("org.bluez.Device1"))
+
+    def interfaces_removed(self, path, _interfaces):
+        self.paired.discard(address_of(path))  # forgotten: pair it again and it is reported again
+
+    def properties_changed(self, _interface, changed, _invalidated, path):
+        if "Paired" in changed:  # a pairing from the device's own settings: Paired flips on its own
+            self.check(path, self.objects().get(path, {}).get("org.bluez.Device1"))
+
+    def check(self, path, dev):
+        """Report a device that just became paired: phones and tablets on our adapter, once."""
+        address = str(dev["Address"]) if dev else address_of(path)
+        if (not dev or not dev.get("Paired") or dev.get("Adapter") != self.adapter_path
+                or not form_of(dev)):
+            self.paired.discard(address)  # unpaired again (or not ours to watch)
+            return
+        if address in self.paired:
+            return
+        self.paired.add(address)
+        self.on_paired(address)
