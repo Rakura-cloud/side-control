@@ -17,6 +17,7 @@ from .config import (
 )
 from .system import (
     adapter_label,
+    compositor_exports,
     hid_owned,
     install_file,
     last_log_line,
@@ -150,12 +151,15 @@ class BluetoothMixin:
 
     def start_service(self):
         """Write the command the service runs (this checkout or AppImage, on the chosen adapter), and start
-        it. systemctl --wait returns when the backend stops, as the backend's own process would."""
+        it. The session's compositor variables go in with it: the service starts without the session's
+        environment, and the backend picks its compositor from them. systemctl --wait returns when the
+        backend stops, as the backend's own process would."""
         command = [*BACKEND_COMMAND, *(["--adapter", self.settings["adapter"]] if self.settings["adapter"] else [])]
         try:
             os.makedirs(os.path.dirname(BACKEND_SCRIPT), exist_ok=True)
             with open(os.open(BACKEND_SCRIPT, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o700), "w") as f:
-                f.write(f"#!/bin/sh\n# what {SERVICE} runs, written by Side Control\nexec {shlex.join(command)}\n")
+                f.write(f"#!/bin/sh\n# what {SERVICE} runs, written by Side Control\n"
+                        f"{compositor_exports()}\nexec {shlex.join(command)}\n")
             proc = Gio.Subprocess.new(["systemctl", "start", "--wait", "--no-ask-password", SERVICE],
                                       Gio.SubprocessFlags.STDERR_PIPE)
         except (OSError, GLib.Error) as err:

@@ -41,5 +41,24 @@ class Installed(unittest.TestCase):
                 self.assertFalse(system.service_installed())
 
 
+class CompositorExports(unittest.TestCase):
+    """The compositor's environment, for the command the service runs: the service starts without
+    the session's variables, and the backend picks its compositor from these."""
+
+    def test_only_the_set_variables_and_unchanged_by_a_shell(self):
+        env = {"NIRI_SOCKET": "/run/user/1000/niri wayland", "XDG_CURRENT_DESKTOP": "niri"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            text = system.compositor_exports()
+        self.assertNotIn("HYPRLAND", text)
+        self.assertIn("export XDG_CURRENT_DESKTOP=niri", text)
+        run = subprocess.run(["sh", "-c", text + '\nprintf %s "$NIRI_SOCKET"'],
+                             capture_output=True, text=True)
+        self.assertEqual(run.stdout, "/run/user/1000/niri wayland")  # quoted as it was
+
+    def test_nothing_set_nothing_exported(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(system.compositor_exports(), "")
+
+
 if __name__ == "__main__":
     unittest.main()
