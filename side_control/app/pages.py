@@ -7,12 +7,10 @@ from gi.repository import Adw, Gdk, Gtk
 
 from .arrangement import ArrangementView
 from .. import VERSION
-from .config import AUTOSTART_PATH, INDICATOR_STYLES, ISSUES_URL, save_settings, set_autostart
+from .config import (AUTOSTART_PATH, GESTURES, GESTURE_ACTION_LABELS, GESTURE_CHOICES,
+                     GESTURE_DEFAULTS, INDICATOR_STYLES, ISSUES_URL, SHORTCUTS, SWIPE_LENGTHS,
+                     save_settings, set_autostart)
 
-
-SHORTCUTS = [("Toggle Cursor Sharing", "<Super><Shift>s"), ("Send Cursor to Next Device", "<Super>Right"),
-             ("Return Cursor to Computer", "<Super>Escape"), ("Lock Cursor to Current Screen", "Scroll_Lock"),
-             ("Open Side Control", "<Super><Alt>d")]
 INDICATORS = [("always", "Always Visible", "A thin line stays on every connected edge"),
               ("near", "When Cursor Is Near", "The edge lights up as the cursor approaches"),
               ("never", "Hidden", "No indicator; just push past the edge")]
@@ -59,17 +57,36 @@ class PagesMixin:
 
     def _gestures_page(self):
         page = Adw.PreferencesPage()
-        keys = Adw.PreferencesGroup(title="Keyboard Shortcuts")
-        for title, accel in SHORTCUTS:
-            row = Adw.ActionRow(title=title, use_markup=False)
-            row.add_suffix(Adw.ShortcutLabel(accelerator=accel, valign=Gtk.Align.CENTER))
+        keys = Adw.PreferencesGroup(title="Keyboard Shortcuts", description="Click a shortcut to "
+                                    "change it; the compositor sees these too, so mind the clashes")
+        self.shortcut_labels = {}
+        for action, (title, subtitle, _accel, _mods, _key) in SHORTCUTS.items():
+            label = Adw.ShortcutLabel(accelerator=self.shortcut_accel(action), valign=Gtk.Align.CENTER)
+            row = Adw.ActionRow(title=title, subtitle=subtitle, use_markup=False, activatable=True)
+            row.add_suffix(label)
+            row.connect("activated", self.on_shortcut_row, action)
+            self.shortcut_labels[action] = label
             keys.add(row)
         page.add(keys)
 
+        acts = Adw.PreferencesGroup(
+            title="Gesture Actions",
+            description="While a device has the cursor. The mouse buttons press that button on it: "
+                        "assign what it does in AssistiveTouch (Buttons 4–7 are set up like the "
+                        "shortcuts above)")
+        for gesture, icon, title in GESTURES:
+            acts.add(self.gesture_row(gesture, icon, title))
+        self.length_row = Adw.ComboRow(title="Swipe Length", use_subtitle=True,
+                                       model=Gtk.StringList.new([label for _k, label in SWIPE_LENGTHS]))
+        self.length_row.updating = True
+        self.length_row.set_selected([k for k, _l in SWIPE_LENGTHS].index(self.settings["swipe_length"]))
+        self.length_row.updating = False
+        self.length_row.connect("notify::selected", self.on_swipe_length)
+        acts.add(self.length_row)
+        page.add(acts)
+
         gestures = Adw.PreferencesGroup(title="Gestures")
         for key, icon, title, subtitle in (
-                ("three_finger_switch", "sc-swipe-symbolic", "Three-Finger Swipe",
-                 "Swipe on the touchpad to open the device’s App Switcher"),
                 ("shake_to_locate", "sc-ads-click-symbolic", "Shake to Locate",
                  "Briefly enlarge the cursor on whichever screen it’s on"),
                 ("tap_to_click", "sc-touch-app-symbolic", "Tap to Click on Device",
@@ -81,6 +98,42 @@ class PagesMixin:
             gestures.add(row)
         page.add(gestures)
         return page
+
+    def shortcut_accel(self, action):
+        """The accelerator a shortcut shows: the user's setting, or the default."""
+        return (self.settings["shortcuts"].get(action) or {}).get("accel") or SHORTCUTS[action][2]
+
+    def on_shortcut_row(self, _row, action):
+        self.ask_shortcut(action)
+
+    def gesture_row(self, gesture, icon, title):
+        choices = GESTURE_CHOICES[gesture]
+        row = Adw.ComboRow(title=title, use_subtitle=True,
+                           model=Gtk.StringList.new([GESTURE_ACTION_LABELS[a] for a in choices]))
+        row.updating = True
+        value = self.settings["gesture_actions"].get(gesture, GESTURE_DEFAULTS[gesture])
+        row.set_selected(choices.index(value))
+        row.updating = False
+        row.add_prefix(Gtk.Image(icon_name=icon, pixel_size=20))
+
+        def chosen(row, _pspec, gesture=gesture, choices=choices):
+            if row.updating:
+                return
+            self.settings["gesture_actions"][gesture] = choices[row.get_selected()]
+            save_settings(self.settings)
+            self.send_gestures()
+        row.connect("notify::selected", chosen)
+        return row
+
+    def on_swipe_length(self, row, _pspec):
+        if row.updating:
+            return
+        self.settings["swipe_length"] = SWIPE_LENGTHS[row.get_selected()][0]
+        save_settings(self.settings)
+        self.send_option("swipe_length")
+
+    def send_gestures(self):
+        self.backend.send(cmd="set_options", gesture_actions=self.settings["gesture_actions"])
 
     def _appearance_page(self):
         page = Adw.PreferencesPage()

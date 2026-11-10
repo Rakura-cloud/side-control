@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Facts about this computer: bluetoothd's plugins, the backend's service, Bluetooth adapters, Hyprland."""
 
+import json
 import os
 import shlex
 import socket
@@ -137,3 +138,25 @@ def hyprland(command):
             return reply.decode(errors="replace")
     except OSError:
         return None
+
+
+HYPR_MODS = {"shift": 1, "ctrl": 4, "alt": 8, "super": 64}  # bits of a binding's modmask
+
+
+def hyprland_binding(key_name, mods):
+    """The Hyprland key binding that uses the same combination (the key named like Hyprland does,
+    e.g. "return"), or None: cheap to check over the IPC socket, so clashes are warned about."""
+    reply = hyprland("j/binds")
+    if not reply:
+        return None
+    try:
+        binds = json.loads(reply)
+    except ValueError:
+        return None
+    mask = 0
+    for mod in mods:
+        mask |= HYPR_MODS.get(mod, 0)
+    for bind in binds if isinstance(binds, list) else []:
+        if str(bind.get("key", "")).lower() == key_name.lower() and bind.get("modmask", 0) == mask:
+            return bind
+    return None

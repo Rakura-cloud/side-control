@@ -462,7 +462,8 @@ class ThreeFingerSwitch(unittest.TestCase):
         return during, events[len(during):]
 
     def test_on_a_device_opens_its_app_switcher(self):
-        self.assertEqual(self.swipe(on_phone=True), ([("click", config.SWIPE_SIDE_BUTTON)], []))
+        self.assertEqual(self.swipe(on_phone=True),
+                         ([("click", config.GESTURE_BUTTONS["button8"])], []))
 
     def test_on_the_pc_the_swipe_is_the_compositors(self):
         self.assertEqual(self.swipe(on_phone=False), ([], []))
@@ -552,8 +553,153 @@ class SwipeFlick(unittest.TestCase):
         h = bridge.handoff
         h.edge, h.vx, h.vy = "right", 380.0, 400.0
         self.swipe(bridge, make_touchpad(), 20)  # towards the right edge, 13 counts away
-        need = config.FLICK_ROOM * config.FLICK_STEP * config.FLICK_REPORTS
+        need = config.FLICK_ROOM * config.flick_length()
         self.assertGreaterEqual(393 - h.vx, need - 1)
+
+
+DEFAULT_HOTKEYS, DEFAULT_TOGGLE, DEFAULT_ACTIONS = list(config.HOTKEYS), set(config.TOGGLE), dict(config.ACTIONS)
+
+
+class Shortcuts(unittest.TestCase):
+    """config.set_shortcuts: the bindings the GUI sends rebuild HOTKEYS, TOGGLE and ACTIONS."""
+
+    def setUp(self):
+        patch = mock.patch.multiple(config, HOTKEYS=list(DEFAULT_HOTKEYS), TOGGLE=set(DEFAULT_TOGGLE),
+                                    ACTIONS=dict(DEFAULT_ACTIONS))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def bindings(self, **over):
+        """The complete set the GUI sends: every default binding, with `over` (action -> combo)."""
+        given = {a: {"mods": sorted(mods), "key": key} for mods, key, a in DEFAULT_HOTKEYS}
+        given.update({"cycle": {"mods": ["ctrl", "alt"], "key": e.KEY_P},
+                      **{f"button{n}": {"mods": ["ctrl", "alt"], "key": key} for n, key in
+                         zip(range(4, 8), (e.KEY_H, e.KEY_C, e.KEY_N, e.KEY_S))}})
+        given.update({a: {"mods": sorted(mods), "key": key} for a, (mods, key) in over.items()})
+        return given
+
+    def test_rebinds_every_group(self):
+        given = self.bindings(toggle_sharing=({"ctrl", "alt"}, e.KEY_J), cycle=(set(), e.KEY_SCROLLLOCK),
+                              button4=({"ctrl", "alt"}, e.KEY_P))
+        self.assertEqual(config.set_shortcuts(given), "button4, button5, button6, button7, cycle, "
+                         "lock, next_device, open_gui, return_to_pc, toggle_sharing")
+        self.assertEqual(config.HOTKEYS, [({"ctrl", "alt"}, e.KEY_J, "toggle_sharing"),
+                                          ({"super"}, e.KEY_RIGHT, "next_device"),
+                                          ({"super"}, e.KEY_ESC, "return_to_pc"),
+                                          (set(), e.KEY_SCROLLLOCK, "lock"),
+                                          ({"super", "alt"}, e.KEY_D, "open_gui")])
+        self.assertEqual(config.TOGGLE, {e.KEY_SCROLLLOCK})
+        self.assertEqual(config.ACTIONS, {e.KEY_P: 0x08, e.KEY_C: 0x10, e.KEY_N: 0x20, e.KEY_S: 0x40})
+
+    def test_unnamed_and_rejected_actions_keep_their_default(self):
+        given = self.bindings(nope=({"super"}, e.KEY_Q), lock=({"bogus"}, e.KEY_L),
+                              button5=({"ctrl"}, e.KEY_C), cycle=({"ctrl", "alt"}, 0))
+        self.assertEqual(config.set_shortcuts(given), "button4, button6, button7, next_device, "
+                         "nope, open_gui, return_to_pc, toggle_sharing")
+        self.assertIn((set(), e.KEY_SCROLLLOCK, "lock"), config.HOTKEYS)  # bad mods: the default
+        self.assertEqual(config.ACTIONS[e.KEY_C], 0x10)  # a button chord without Ctrl+Alt: default
+
+    def test_super_esc_still_returns_after_rebinding_it(self):
+        config.set_shortcuts(self.bindings(return_to_pc=({"ctrl", "alt"}, e.KEY_R)))
+        self.assertIn(({"ctrl", "alt"}, e.KEY_R, "return_to_pc"), config.HOTKEYS)
+        self.assertIn(({"super"}, e.KEY_ESC, "return_to_pc"), config.HOTKEYS)
+        self.assertEqual(config.TOGGLE, DEFAULT_TOGGLE)  # key 0 is no key
+
+    def test_gestures_and_length_arrive_through_options(self):
+        self.assertEqual(config.OPTIONS["gesture_actions"][1]({"swipe_up": "button7", "pinch": "huh"}),
+                         {**config.GESTURE_ACTIONS, "swipe_up": "button7"})
+        self.assertEqual(config.OPTIONS["gesture_actions"][1](5), config.GESTURE_ACTIONS)
+        self.assertEqual(config.OPTIONS["swipe_length"][1]("long"), "long")
+        self.assertEqual(config.OPTIONS["swipe_length"][1]("enormous"), "medium")
+
+
+class GestureActions(unittest.TestCase):
+    """What each gesture does, once the GUI has set it."""
+
+    def setUp(self):
+        patch = mock.patch.object(config, "GESTURE_ACTIONS", dict(config.GESTURE_ACTIONS))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def swipe_up(self, bridge):
+        """One SYN with three fingers already swiped up past SWIPE_UP_MM: the buttons clicked."""
+        tp = make_touchpad()
+        tp.touching, tp.click_bit, tp.three_done, tp.swiped = True, 0, False, False
+        tp.fingers, tp.max_fingers, tp.swipe = 3, 3, -(config.SWIPE_UP_MM + 1)
+        tp.x, tp.y, tp.last = 10, 20, (10, 20)
+        bridge.touchpad_event(tp, InputEvent(0, 0, e.EV_SYN, e.SYN_REPORT, 0))
+        return bridge.clicks
+
+    def test_swipe_up_presses_what_it_is_set_to(self):
+        bridge, phone, _mouse = make_mouse_bridge()
+        bridge.clicks = []
+        bridge.click = lambda bit: bridge.clicks.append(bit)
+        self.assertEqual(self.swipe_up(bridge), [config.GESTURE_BUTTONS["button4"]])  # the default
+        bridge.clicks.clear()
+        config.GESTURE_ACTIONS["swipe_up"] = "button7"
+        self.assertEqual(self.swipe_up(bridge), [0x40])
+        bridge.clicks.clear()
+        config.GESTURE_ACTIONS["swipe_up"] = "none"
+        self.assertEqual(self.swipe_up(bridge), [])
+        self.assertEqual(phone.reports, [])  # nothing was sent for the swipe itself
+
+    def test_swipe_left_right(self):
+        clicks = []
+
+        def swipe(act):
+            config.GESTURE_ACTIONS["swipe_side"] = act
+            bridge, _phone, _mouse = make_mouse_bridge()
+            bridge.click = lambda bit: clicks.append(bit)
+            tp = make_touchpad()
+            tp.three, tp.three_done, tp.three_step = 10.0, False, 0
+            for dx in (0, 10, 20, 30):
+                tp.contacts = {i: [10 * i + dx, 5] for i in range(3)}
+                bridge.three_finger_switch(tp)
+            return clicks.pop().bit_length() if clicks else None
+
+        self.assertEqual(swipe("button6"), 6)
+        self.assertEqual(swipe("none"), None)
+
+    def test_two_finger_left_right_scrolls_when_set_to(self):
+        config.GESTURE_ACTIONS["swipe_lr"] = "scroll"
+        bridge, phone, _mouse = make_mouse_bridge()
+        tp = make_touchpad()
+        tp.gesture, tp.move, tp.zoom, tp.scroll, tp.flicked, tp.pair = "h", [0.0, 0.0], 0.0, 0.0, False, None
+        for _ in range(6):  # 6 mm of horizontal travel: more than one SCROLL_STEP_MM
+            bridge.two_finger_gesture(tp, 1.0, 0.0)
+        drain(bridge)
+        self.assertIn(2, [r[1][4] for r in phone.raw if r[0] == 2])  # AC Pan right
+
+    def test_pinch_does_nothing_when_set_to(self):
+        config.GESTURE_ACTIONS["pinch"] = "none"
+        bridge, phone, _mouse = make_mouse_bridge()
+        tp = make_touchpad()
+        tp.gesture, tp.move, tp.zoom, tp.scroll, tp.flicked = "pinch", [0.0, 0.0], 0.0, 0.0, False
+        tp.contacts = {0: [10, 30], 1: [30, 30]}
+        tp.pair = (20.0, 30.0, 28.0)  # the fingers are 8 mm closer than at the last SYN
+        bridge.two_finger_gesture(tp, 0.0, 0.0)
+        self.assertEqual(phone.raw, [])
+
+
+class FlickLength(unittest.TestCase):
+    """The Swipe Length setting: how far the two-finger flick drags."""
+
+    def test_by_setting(self):
+        for setting, length in (("short", 96), ("medium", config.FLICK_LENGTHS["medium"]), ("long", 224)):
+            with mock.patch.object(config, "SWIPE_LENGTH", setting):
+                self.assertEqual(config.flick_length(), length)
+
+    def test_the_flick_drags_its_length_and_returns(self):
+        phone = FakePhone()
+        bridge = make_bridge(phone)
+        for setting, length in config.FLICK_LENGTHS.items():
+            bridge.steps.clear()
+            with mock.patch.object(config, "SWIPE_LENGTH", setting):
+                bridge.flick(1)
+            step = round(length / config.FLICK_REPORTS)
+            moves = [s for s in bridge.steps if not isinstance(s, float)]
+            self.assertEqual(sum(s[0] for s in moves if s[0] > 0), step * config.FLICK_REPORTS)
+            self.assertEqual(sum(s[0] for s in moves if s[0] < 0), -step * config.FLICK_REPORTS)
 
 
 if __name__ == "__main__":
