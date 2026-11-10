@@ -11,7 +11,20 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from side_control.backend.compositor import Compositor, Hyprland, KWin, Mutter, Niri, detect  # noqa: E402
+import dbus  # noqa: E402
+import dbus.service  # noqa: E402
+from side_control.backend.compositor import (  # noqa: E402
+    CURSOR_PATH,
+    CURSOR_SCRIPT,
+    SCRIPT_PLUGIN,
+    Compositor,
+    CursorReceiver,
+    Hyprland,
+    KWin,
+    Mutter,
+    Niri,
+    detect,
+)
 
 
 class Detect(unittest.TestCase):
@@ -136,16 +149,39 @@ MUTTER_STATE = (
 )
 
 
+class FakeShell:
+    """A fake io.github.sidecontrol.Shell, what the GNOME Shell extension serves on the session
+    bus: GetCursor and Warp, recording what Warp got. present=False stands for the extension not
+    being installed, which is what every call looks like then."""
+
+    def __init__(self, cursor=(640, 400), present=True):
+        self.cursor, self.present, self.warped = cursor, present, None
+
+    def get_object(self, name, path):
+        return self
+
+    def get_dbus_method(self, method, interface):
+        def call(*args):
+            if not self.present:
+                raise dbus.DBusException("no such name")
+            if method == "GetCursor":
+                return self.cursor
+            self.warped = args
+        return call
+
+
 class MutterLayout(unittest.TestCase):
-    """GNOME: GetCurrentState gives the logical monitors; the pointer position and moving it are
-    not in Mutter's D-Bus API at all."""
+    """GNOME: GetCurrentState gives the logical monitors; the pointer position and moving it come
+    from the GNOME Shell extension (MutterExtension below)."""
 
     def test_layout_from_get_current_state(self):
         comp = Mutter()
         comp.state = lambda: MUTTER_STATE
         self.assertEqual(comp.layout(), [(0, 0, 3440, 1440), (-791, -1440, 489, -720), (3440, -960, 4520, 960)])
-        self.assertIsNone(comp.cursor())
-        self.assertFalse(comp.warp(1, 2))
+        with mock.patch("side_control.backend.compositor.dbus.SessionBus",
+                        return_value=FakeShell(present=False)):  # the extension is not running
+            self.assertIsNone(comp.cursor())
+            self.assertFalse(comp.warp(1, 2))
 
     def test_no_reply_is_no_layout(self):
         comp = Mutter()
@@ -181,6 +217,136 @@ class KWinLayout(unittest.TestCase):
         comp = KWin()
         comp.doctor = lambda: None
         self.assertIsNone(comp.layout())
+
+
+class MutterExtension(unittest.TestCase):
+    """GNOME: cursor() and warp() go through the Side Control GNOME Shell extension
+    (data/gnome-shell/...), and fall back to None and False when it is not running."""
+
+    def test_cursor_and_warp_through_the_extension(self):
+        shell = FakeShell()
+        comp = Mutter()
+        with mock.patch("side_control.backend.compositor.dbus.SessionBus", return_value=shell):
+            self.assertEqual(comp.cursor(), (640, 400))
+            self.assertTrue(comp.warp(100.4, 200.6))
+            self.assertEqual(shell.warped, (100, 201))
+            self.assertTrue(comp.available)
+
+    def test_without_the_extension(self):
+        comp = Mutter()
+        with mock.patch("side_control.backend.compositor.dbus.SessionBus",
+                        return_value=FakeShell(present=False)):
+            self.assertIsNone(comp.cursor())
+            self.assertFalse(comp.warp(1, 2))
+            self.assertFalse(comp.available)
+
+
+class FakeKWinObject:
+    """A fake D-Bus object of FakeKWin: get_dbus_method returns a recorder that answers, or
+    raises where the real KWin would not answer."""
+
+    def __init__(self, kwin, path):
+        self.kwin, self.path = kwin, path
+
+    def get_dbus_method(self, method, interface):
+        def call(*args):
+            self.kwin.calls.append((self.path, method, args))
+            return self.kwin.answer(self.path, method, args)
+        return call
+
+
+class FakeKWin:
+    """A fake session bus with org.kde.KWin on it: Scripting's loadScript / unloadScript and the
+    script object's run, recording every call. run_on is where run() answers (KWin 6's
+    /Scripting/Script<id>, KWin 5's /<id>); running=False stands for KWin not being there."""
+
+    def __init__(self, run_on=("/Scripting/Script7", "/7"), running=True):
+        self.run_on, self.running = run_on, running
+        self.calls = []
+        self.exported = None  # the object path the cursor receiver was exported at
+        self._bus_names = {}
+
+    # the connection side of the bus (what dbus.service.BusName and Object touch)
+    def request_name(self, name, flags):
+        return dbus.service._dbus_bindings.REQUEST_NAME_REPLY_PRIMARY_OWNER
+
+    def release_name(self, name):
+        pass
+
+    def _register_object_path(self, path, message_cb, unregister_cb, fallback):
+        self.exported = path
+
+    # the org.kde.KWin side
+    def get_object(self, name, path):
+        return FakeKWinObject(self, path)
+
+    def answer(self, path, method, args):
+        if not self.running:
+            raise dbus.DBusException("no KWin here")
+        if method == "loadScript":
+            return 7
+        if method == "run" and path not in self.run_on:
+            raise dbus.DBusException(f"no script at {path}")
+        return True  # what unloadScript replies
+
+
+class CursorReceiverReports(unittest.TestCase):
+    """The session-bus receiver the KWin script calls: Report is what cursor() returns."""
+
+    def test_reports_update_the_cursor(self):
+        comp = KWin()
+        receiver = CursorReceiver(comp, FakeKWin())
+        receiver.Report("640", "400.4")  # what the script sends: strings, see its comment
+        self.assertEqual(comp.cursor(), (640, 400))
+        receiver.Report("not a number", "400")  # ignored: the cursor stays
+        self.assertEqual(comp.cursor(), (640, 400))
+
+
+class KWinCursorScript(unittest.TestCase):
+    """The KWin cursor script over a fake Scripting D-Bus object: loaded and run at start(),
+    unloaded at exit, and cursor() is what its receiver reports."""
+
+    def start(self, **kwargs):
+        kwin = FakeKWin(**kwargs)
+        comp = KWin()
+        with mock.patch("side_control.backend.compositor.dbus.SessionBus", return_value=kwin):
+            comp.start()
+        return comp, kwin
+
+    def test_load_and_run(self):
+        comp, kwin = self.start()
+        self.assertEqual(kwin.calls, [("/Scripting", "loadScript", (CURSOR_SCRIPT, SCRIPT_PLUGIN)),
+                                      ("/Scripting/Script7", "run", ())])  # KWin 6's script object
+        self.assertEqual(kwin.exported, CURSOR_PATH)  # what the script reports to
+        self.assertEqual(comp.script, 7)
+        self.assertTrue(comp.available)
+
+    def test_kwin_5_runs_the_script_from_its_own_path(self):
+        comp, kwin = self.start(run_on=("/7",))
+        self.assertEqual(kwin.calls[-1], ("/7", "run", ()))
+        self.assertEqual(comp.script, 7)
+
+    def test_unload_at_exit(self):
+        comp, kwin = self.start()
+        comp.unload_script()  # what atexit runs
+        self.assertEqual(kwin.calls[-1], ("/Scripting", "unloadScript", (SCRIPT_PLUGIN,)))
+
+    def test_a_script_that_would_not_run_is_unloaded(self):
+        comp, kwin = self.start(run_on=())
+        self.assertIsNone(comp.script)
+        self.assertFalse(comp.available)
+        self.assertEqual(kwin.calls[-1], ("/Scripting", "unloadScript", (SCRIPT_PLUGIN,)))
+
+    def test_no_kwin_is_no_script(self):
+        comp, kwin = self.start(running=False)
+        self.assertIsNone(comp.script)
+        self.assertFalse(comp.available)
+        self.assertIsNone(comp.cursor())  # nothing was ever reported
+
+    def test_reports_reach_the_cursor(self):
+        comp, _kwin = self.start()
+        comp.reports.Report("10", "20")  # the script's call, as the receiver gets it
+        self.assertEqual(comp.cursor(), (10, 20))
 
 
 if __name__ == "__main__":
