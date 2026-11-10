@@ -65,8 +65,11 @@ tap it. Every "tap X" below is a tap on that action's button or field.
       (`Computer URL/clipboard`).
     - Tap **Show More**. **Method**: **POST**.
     - **Headers**: tap **Add new item**, key `X-Side-Control-Token`, value: the variable `Token`.
-    - **Request Body**: **Text**, and pick the variable `Text` (from step 14).
-16. Add **Show Notification**. Tap the text and type `Sent to the computer`.
+    - **Request Body**: **File** (it has no plain-text choice; a text variable given as a file is
+      sent as its raw text, which is what the computer reads), and pick the variable `Text` (from
+      step 14).
+16. Add **Show Notification**. Tap the text and type `Sent to the computer`. Then add **Stop This
+    Shortcut**, so the share sheet does not go on to the menu below.
 17. Add **End If**.
 18. Search **Choose from Menu** and add it. Give it these four items (tap **Add new item** for each):
     `Send Clipboard to Computer`, `Get Clipboard from Computer`, `Return Pointer to Computer`,
@@ -74,7 +77,7 @@ tap it. Every "tap X" below is a tap on that action's button or field.
 19. Under **Send Clipboard to Computer**, add:
     1. **Get Clipboard**.
     2. **Get Contents of URL** as in step 15 (URL `Computer URL/clipboard`, **POST**, the same
-       header, **Request Body**: **Text** → the variable `Clipboard`).
+       header, **Request Body**: **File** → the variable `Clipboard`).
     3. **Show Notification** with `Sent to the computer`.
 20. Under **Get Clipboard from Computer**, add:
     1. **Get Contents of URL**. Tap **URL**, enter `Computer URL/clipboard`. Tap **Show More** →

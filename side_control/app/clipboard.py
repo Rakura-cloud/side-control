@@ -96,7 +96,8 @@ def read_text():
     paste = shutil.which("wl-paste")
     if paste:
         try:
-            done = subprocess.run([paste, "--no-newline"], capture_output=True, timeout=CLIP_TIMEOUT_S)
+            done = subprocess.run([paste, "--no-newline", "--type", "text"], capture_output=True,
+                                  timeout=CLIP_TIMEOUT_S)  # text only: not an image's bytes
             if done.returncode == 0:
                 return done.stdout.decode("utf-8", "replace")
         except (OSError, subprocess.SubprocessError):
@@ -135,6 +136,7 @@ class _Handler(BaseHTTPRequestHandler):
     """One request from the Shortcut: the token first, then the endpoint."""
 
     protocol_version = "HTTP/1.1"
+    timeout = 10  # seconds a connection may sit idle: one that never sends would hold a thread
 
     def do_GET(self):
         if not self.token_ok():

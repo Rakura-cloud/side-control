@@ -111,7 +111,10 @@ class DialogsMixin:
 
     def show_add_to_iphone(self, address=None):
         """Two QR codes for the device's camera: the Side Control Shortcut (an iCloud link), then the
-        setup code with this computer's address and token (docs/shortcuts.md)."""
+        setup code with this computer's address and token (docs/shortcuts.md). The Shortcut needs the
+        server, so asking for it turns Share Clipboard on."""
+        if not self.settings["share_clipboard"]:
+            self.clipboard_row.set_active(True)  # saves it and starts the server, as the switch does
         dev = self.devs.get(address or "", {})
         kind = "iPad" if dev.get("form") == "tablet" else "iPhone"
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)

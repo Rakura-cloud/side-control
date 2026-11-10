@@ -314,7 +314,8 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
             try:
                 self.clipboard_server = clipboard.ClipboardServer(
                     clipboard.new_token(self.settings), clipboard.read_text, clipboard.write_text,
-                    self.backend.send)
+                    # from the server's thread: the backend socket is written on the main loop only
+                    lambda **msg: GLib.idle_add(lambda: self.backend.send(**msg) and False))
                 self.clipboard_server.start()
             except OSError as err:
                 self.clipboard_server = None
