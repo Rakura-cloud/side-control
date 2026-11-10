@@ -48,6 +48,7 @@ class FakePhone:
 
 class FakeCompositor:
     available = True
+    name = "a fake compositor"
 
     def __init__(self, rects=((0, 0, 1920, 1080),), cursor=None):
         self.rects, self.pos = list(rects), cursor
@@ -62,6 +63,7 @@ class FakeCompositor:
 
     def warp(self, x, y):
         self.warped = (x, y)
+        return True
 
     def hide_cursor(self, hide):
         self.hidden = hide
@@ -340,6 +342,49 @@ class HandoffTest(unittest.TestCase):
         self.assertEqual(edge, "left")
         self.assertTrue(inside(0.4))
         self.assertFalse(inside(0.7))
+
+
+class NoCursorHandoff(unittest.TestCase):
+    """A compositor that cannot tell where the PC pointer is (niri, KDE, GNOME): edge hand-off
+    never starts, while switching by hand and coming back still work."""
+
+    def test_edge_hand_off_never_starts(self):
+        phone = FakePhone()
+        phone.zone, phone.address, phone.require_near = "right", "AA", False
+        bridge = make_bridge(phone)
+        bridge.on_phone = False
+        bridge.fleet = types.SimpleNamespace(connected=lambda: [phone])
+        bridge.handoff = h = Handoff(bridge, bridge.fleet, None, FakeCompositor(cursor=None))
+        entered = []
+        h.enter = lambda p, edge, frac: entered.append((edge, frac))
+        with mock.patch.object(config, "SWITCH_DELAY_S", 0):
+            for _ in range(5):
+                h.pc_motion(config.EDGE_PUSH_MM + 1, 0)  # pushing right, off the screen edge
+        self.assertEqual(entered, [])
+
+    def test_switching_by_hand_still_works(self):
+        phone = FakePhone()
+        bridge = make_bridge(phone)
+        bridge.handoff = h = Handoff(bridge, None, None, FakeCompositor(cursor=None))
+        bridge.on_phone = True
+        h.edge, h.entry_frac = "right", 0.5  # a hotkey or the app switched to the device
+        h.on_enter()
+        drain(bridge)
+        self.assertAlmostEqual(h.vy / phone.size()[1], 0.5, places=2)
+        bridge.dx = -(config.RETURN_PUSH + 50.0)  # push back out through the side it came in by
+        drain(bridge)
+        self.assertFalse(bridge.on_phone)
+
+    def test_configure_says_edge_hand_off_is_off(self):
+        phone = FakePhone()
+        bridge = make_bridge(phone)
+        comp = FakeCompositor(cursor=None)
+        comp.available = False
+        bridge.handoff = h = Handoff(bridge, types.SimpleNamespace(phones={}), None, comp)
+        said = []
+        with mock.patch("side_control.backend.handoff.log", said.append):
+            h.configure(phone, "right", False, 393, 852)
+        self.assertTrue(any("edge hand-off is off" in line for line in said))
 
 
 # eDP-1 (1920x1080 at scale 1.2) below DP-1 (3440x1440), offset to the left: the issue's example

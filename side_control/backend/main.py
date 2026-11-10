@@ -15,7 +15,7 @@ import evdev
 from . import config
 from .bluez import paired_devices, setup_bluez
 from .bridge import Bridge
-from .compositor import Hyprland
+from .compositor import detect
 from .config import BATTERY_EVERY, INPUT_RESCAN_S, MOUSE_INTERVAL, NAME, RECONNECT_EVERY, SOCK_PATH
 from .control import Control
 from .devices import Fleet
@@ -64,7 +64,11 @@ def main():
     proximity = Proximity(bus, adapter_path)
     proximity.start()
     bridge.proximity = proximity
-    compositor = Hyprland()
+    compositor = detect()
+    log(f"compositor: {compositor.name}")
+    if not compositor.available:
+        log(f"no pointer position or warp from {compositor.name}: edge hand-off and hiding the PC "
+            "pointer are off, the hotkey and the app still switch")
     compositor.hide_cursor(False)  # hidden by a backend that was killed
     atexit.register(compositor.hide_cursor, False)
     # pkill / a closed terminal: exit through atexit, so the pointer is shown again
