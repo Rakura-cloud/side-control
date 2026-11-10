@@ -19,6 +19,11 @@ TMP = tempfile.mkdtemp(prefix="side-control-shots-")
 SOCK = os.path.join(TMP, "sock")
 os.environ["SIDE_CONTROL_SOCK"] = SOCK  # the window talks to serve() below instead of the backend
 os.environ["XDG_CONFIG_HOME"] = TMP     # and keeps its settings out of yours
+os.environ["HOME"] = os.environ["XDG_DATA_HOME"] = TMP  # and its AppImage install out of yours too
+# as inside the AppImage: config.APPIMAGE picks this up when APPDIR holds the package, so Settings
+# shows the Install action
+os.environ["APPIMAGE"] = os.path.join(TMP, "Side_Control 0.1.0-x86_64.AppImage")
+os.environ["APPDIR"] = ROOT
 os.makedirs(os.path.join(TMP, "side-control"))
 with open(os.path.join(TMP, "side-control", "settings.json"), "w") as f:
     json.dump({"hid_banner_dismissed": True}, f)

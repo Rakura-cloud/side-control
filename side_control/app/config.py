@@ -3,7 +3,7 @@
 
 import json
 import os
-import shlex
+import re
 import shutil
 import sys
 
@@ -83,22 +83,43 @@ def save_settings(settings):
         pass
 
 
-def set_autostart(on):
+def desktop_exec(*argv):
+    """An Exec= value, quoted as the desktop entry spec says: arguments with reserved characters go
+    in double quotes, with quotes, backticks, dollar signs and backslashes escaped, and % doubled."""
+    def quote(value):
+        value = value.replace("%", "%%")
+        if not set(value) & set(" \t\n\"'\\><~|&;$*?#()`"):
+            return value
+        value = re.sub(r'(["`$\\])', r"\\\1", value)  # the Exec key's own quoting...
+        return '"' + value.replace("\\", "\\\\") + '"'  # ...then the string escaping every value gets
+    return " ".join(quote(arg) for arg in argv)
+
+
+def install_icon(data_dir=None):
+    """Copy the app icon where icon themes find it: an AppImage's files are gone once it quits."""
+    icon = os.path.join(data_dir or GLib.get_user_data_dir(), "icons", "hicolor", "scalable", "apps",
+                        APP_ICON + ".svg")
+    os.makedirs(os.path.dirname(icon), exist_ok=True)
+    shutil.copyfile(os.path.join(ICONS_DIR, APP_ICON + ".svg"), icon)
+    return icon
+
+
+def set_autostart(on, path=None, command=None, icon=None):
+    """Write (or remove) the autostart entry. `--install` passes the installed copy as command and
+    icon, so that Launch at Login follows it."""
+    path = path or AUTOSTART_PATH
     if not on:
         try:
-            os.unlink(AUTOSTART_PATH)
+            os.unlink(path)
         except FileNotFoundError:
             pass
         return
-    os.makedirs(os.path.dirname(AUTOSTART_PATH), exist_ok=True)
-    if APPIMAGE:  # its files are gone once it quits: copy the icon out
-        command = shlex.quote(APPIMAGE)
-        icon = os.path.join(GLib.get_user_data_dir(), "icons", "hicolor", "scalable", "apps", APP_ICON + ".svg")
-        os.makedirs(os.path.dirname(icon), exist_ok=True)
-        shutil.copyfile(os.path.join(ICONS_DIR, APP_ICON + ".svg"), icon)
-    else:
-        command = f"{shlex.quote(sys.executable)} {shlex.quote(LAUNCHER)}"
-        icon = os.path.join(ICONS_DIR, APP_ICON + ".svg")
-    with open(AUTOSTART_PATH, "w") as f:
+    if command is None:
+        if APPIMAGE:  # its files are gone once it quits: copy the icon out
+            command, icon = desktop_exec(APPIMAGE), install_icon()
+        else:
+            command, icon = desktop_exec(sys.executable, LAUNCHER), os.path.join(ICONS_DIR, APP_ICON + ".svg")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
         f.write("[Desktop Entry]\nType=Application\nName=Side Control\n"
                 f"Exec={command} --hidden\nIcon={icon}\nX-GNOME-Autostart-enabled=true\n")

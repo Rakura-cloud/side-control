@@ -1,8 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""python -m side_control.app [--hidden]  (--hidden: start in the background, for Launch at Login)"""
+"""python -m side_control.app [--hidden]  (--hidden: start in the background, for Launch at Login)
+Also `--install` / `--uninstall`, which add the AppImage to the applications menu or remove it."""
 import ctypes.util
 import os
 import sys
+
+# --install and --uninstall only touch files: no window, and no need for the layer-shell preload
+if "--install" in sys.argv or "--uninstall" in sys.argv:
+    from .install import cli  # noqa: E402
+
+    sys.exit(cli(sys.argv))
 
 # gtk4-layer-shell (the on-screen edge indicator) must be loaded before libwayland: start over with it
 # preloaded

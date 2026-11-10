@@ -25,7 +25,7 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 
 | Module | What it is |
 |---|---|
-| `__main__.py` | Entry point. Re-executes itself with gtk4-layer-shell in `LD_PRELOAD` (it must load before libwayland). |
+| `__main__.py` | Entry point. `--install` / `--uninstall` go to `install.py` without GTK; otherwise re-executes itself with gtk4-layer-shell in `LD_PRELOAD` (it must load before libwayland). |
 | `__init__.py` | Picks the GTK versions (`gi.require_version`) before any module imports `gi.repository`. |
 | `application.py` | `App`: single instance, background mode, `main()`. |
 | `window.py` | `Window`: navigation and reacting to the backend (`on_status`, `on_state`, `layout_changed`). Built from the mixins below. |
@@ -33,6 +33,7 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 | `dialogs.py` | `DialogsMixin`: pairing, forgetting, the AssistiveTouch guide. |
 | `bluetooth.py` | `BluetoothMixin`: adapter, name, Own HID Profile, installing (`pkexec`) and starting the backend's service. |
 | `config.py` | Paths, defaults, the settings file, Launch at Login, `BACKEND_COMMAND` (differs inside the AppImage), `SERVICE`. |
+| `install.py` | Installing the AppImage (`--install` / `--uninstall`): the copy, menu entry, icon, autostart and the backend's command. No GTK, so `tests/test_install.py` runs it against a temporary home. |
 | `system.py` | bluetoothd's plugins, whether the service is installed and the root commands that install it, adapter names, Hyprland IPC. |
 | `backend_link.py` | `Backend`: the socket client, reconnects by itself. |
 | `geometry.py` | Arrangement maths, ported from the design. No GTK: tested in `tests/test_geometry.py`. |

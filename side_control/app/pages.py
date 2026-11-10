@@ -2,12 +2,14 @@
 """The five pages of the window."""
 
 import os
+import shlex
 
-from gi.repository import Adw, Gdk, Gtk
+from gi.repository import Adw, Gdk, GLib, Gio, Gtk
 
 from .arrangement import ArrangementView
 from .. import VERSION
-from .config import AUTOSTART_PATH, INDICATOR_STYLES, ISSUES_URL, save_settings, set_autostart
+from . import install
+from .config import APPIMAGE, AUTOSTART_PATH, INDICATOR_STYLES, ISSUES_URL, save_settings, set_autostart
 
 
 SHORTCUTS = [("Toggle Cursor Sharing", "<Super><Shift>s"), ("Send Cursor to Next Device", "<Super>Right"),
@@ -193,6 +195,17 @@ class PagesMixin:
                                     "Keep devices connected when the window is closed"))
         page.add(general)
 
+        if APPIMAGE and not install.installed_from(APPIMAGE):
+            self.install_row = Adw.ActionRow(activatable=True)
+            self.install_button = Gtk.Button(valign=Gtk.Align.CENTER, css_classes=["suggested-action"])
+            self.install_button.connect("clicked", self.on_install)
+            self.install_row.add_suffix(self.install_button)
+            self.install_row.set_activatable_widget(self.install_button)
+            appimage = Adw.PreferencesGroup(title="AppImage")
+            appimage.add(self.install_row)
+            page.add(appimage)
+            self.show_install()
+
         bluetooth = Adw.PreferencesGroup(title="Bluetooth")
         self.adapter_names = Gtk.StringList()
         self.adapter_row = Adw.ComboRow(title="Adapter", use_subtitle=True, model=self.adapter_names)
@@ -274,6 +287,44 @@ class PagesMixin:
             set_autostart(row.get_active())
         except OSError as err:
             self.toasts.add_toast(Adw.Toast(title=f"Could not change autostart: {err.strerror}"))
+
+    def show_install(self):
+        """The AppImage row: Install, or Relaunch once there is a copy in ~/.local/bin."""
+        if install.installed():
+            self.install_row.set_title("Installed")
+            self.install_row.set_subtitle(f"Side Control is installed at {install.install_path()}")
+            self.install_button.set_label("Relaunch")
+        else:
+            self.install_row.set_title("Install Side Control")
+            self.install_row.set_subtitle("Add Side Control to your applications menu and keep it in one place")
+            self.install_button.set_label("Install")
+
+    def on_install(self, _button):
+        if install.installed():
+            self.relaunch_installed()
+            return
+        try:
+            lines = install.install()
+        except (OSError, ValueError) as err:
+            self.toasts.add_toast(Adw.Toast(title=f"Could not install: {err}"[:160]))
+            return
+        self.show_install()
+        for line in lines:
+            if line.startswith("Warning:"):
+                self.toasts.add_toast(Adw.Toast(title=line[:160]))
+        toast = Adw.Toast(title="Side Control installed", button_label="Relaunch", timeout=8)
+        toast.connect("button-clicked", lambda _toast: self.relaunch_installed())
+        self.toasts.add_toast(toast)
+
+    def relaunch_installed(self):
+        """Quit this copy and start the installed one: they share an application ID, so only one runs."""
+        path = install.install_path()
+        try:
+            Gio.Subprocess.new(["sh", "-c", f"sleep 1; exec {shlex.quote(path)}"], Gio.SubprocessFlags.NONE)
+        except GLib.Error as err:
+            self.toasts.add_toast(Adw.Toast(title=f"Could not start {path}: {err.message}"[:160]))
+            return
+        self.get_application().quit()
 
     def on_report(self, _row):
         if ISSUES_URL:

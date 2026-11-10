@@ -58,6 +58,43 @@ chmod +x Side_Control-*-x86_64.AppImage
 It bundles Python, GTK and everything else it needs, so it runs on any x86_64 distribution. Your system
 still needs what Side Control talks to: BlueZ, polkit, and Hyprland for edge hand-off (see below).
 
+The file runs from wherever it is, but it only shows up in your applications menu after it is
+installed. Install it once:
+
+```sh
+./Side_Control-*-x86_64.AppImage --install
+```
+
+That copies the AppImage to `~/.local/bin/side-control.AppImage`, adds **Side Control** to your
+applications menu, copies its icon there, and points **Launch at Login** and the backend's service at
+the copy. It is safe to run again, and it is how you update an installed AppImage: download the new one
+and run its `--install`. To undo it:
+
+```sh
+~/.local/bin/side-control.AppImage --uninstall
+```
+
+`--uninstall` removes the copy, the menu entry, the icon and Launch at Login; your settings and paired
+devices stay.
+
+You can also install from the app: when it runs from a downloaded AppImage, **Settings → AppImage** has
+**Install**, and then **Relaunch** to start the installed copy.
+
+If you don't install it, you can still run it from wherever you keep it, but don't move it after
+turning on **Launch at Login**: the autostart entry points at that exact file. Install it instead, or
+turn Launch at Login off and on again after moving the file.
+
+**Gear Lever** and **AppImageLauncher** do the same job: both move AppImages to `~/Applications` and add
+a menu entry. Use one of them or `--install`, not both, or you will have two menu entries, and Launch
+at Login may point at the wrong copy.
+
+The AppImage must be executable, so it cannot run from a mount with `noexec` (some people mount `/tmp`,
+or a network or encrypted home, that way). `--install` warns if the downloaded file or the copy in
+`~/.local/bin` is on such a mount; move the file to your home, or mount it without `noexec`.
+
+Tested on Arch Linux with Hyprland. On other desktops, a newly installed menu entry can take a moment
+to appear, since some launchers cache their menus.
+
 #### Dev build
 
 To try fixes before they are released, download `Side_Control-<version>-dev.<commit>-x86_64.AppImage`
@@ -78,6 +115,10 @@ git clone https://github.com/Rakura-cloud/side-control.git
 cd side-control
 ./side-control
 ```
+
+An AUR package (`side-control` or `side-control-git`) would install the app and the backend as normal
+system files, avoiding the AppImage's mount and its `noexec` problem. It does not exist yet; for now
+the AppImage and a checkout are the two ways to run Side Control.
 
 ### First run
 
