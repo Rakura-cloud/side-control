@@ -19,7 +19,7 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 | `tools/screenshots.py`, `tools/screenshots.sh` | Render every page against a fake backend (headless with the `.sh`). |
 | `docs/screenshots/` | README images, made by `tools/screenshots.sh`. |
 | `packaging/` | Desktop entry, and `appimage/build.sh` (quick-sharun, bundles everything down to glibc). |
-| `.github/workflows/` | `ci.yml`: lint + tests. `release.yml`: on a `v*` tag, build the AppImage and publish a release. |
+| `.github/workflows/` | `ci.yml`: lint + tests. `release.yml`: on a `v*` tag, build the AppImage and publish a release; on a push to `dev`, rebuild the `dev` pre-release. |
 
 ### `side_control/app/`
 
@@ -119,10 +119,24 @@ UI changes. `packaging/appimage/build.sh` builds the AppImage locally (Arch Linu
 
 ## Releasing
 
-1. Set `VERSION` in `side_control/__init__.py`, commit.
-2. Tag and push: `git tag v<VERSION> && git push origin v<VERSION>`.
-3. `release.yml` checks the tag matches `VERSION`, runs the tests, builds the AppImage and publishes the
-   GitHub release with it.
+Changes flow feature branch → `dev` → `main` → tag. Open pull requests against `dev`; merge `dev` into
+`main` when it is ready for a release.
+
+There are two channels, each with its own AppImage update information (zsync), so an AppImage only
+updates within its channel:
+
+- **Dev:** every push to `dev` makes `release.yml` build the AppImage as version
+  `<VERSION>-dev.<short commit>`, move the `dev` tag to that commit and replace the assets of the `dev`
+  GitHub pre-release (never "Latest"). Nothing else feeds it: merges to `main` stay unreleased until
+  they are tagged.
+- **Stable:** a `v*` tag on `main`:
+  1. Set `VERSION` in `side_control/__init__.py`, commit.
+  2. Tag and push: `git tag v<VERSION> && git push origin v<VERSION>`.
+  3. `release.yml` checks the tag matches `VERSION`, runs the tests, builds the AppImage and publishes
+     the GitHub release with it.
+
+`CHANNEL=dev packaging/appimage/build.sh` builds a dev AppImage locally. The build writes its full
+version to `side_control/version` in the AppImage, which Settings and the sidebar show.
 
 ## Things to know
 

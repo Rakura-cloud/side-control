@@ -1,15 +1,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Push a tag vX.Y.Z (matching VERSION in side_control/__init__.py) to build the AppImage and publish
-# it as a GitHub release. Run it by hand (Actions > Release > Run workflow) to only build it.
+# Two channels. Stable: push a tag vX.Y.Z (matching VERSION in side_control/__init__.py) to build the
+# AppImage and publish it as a GitHub release. Dev: every push to the dev branch rebuilds the "dev"
+# pre-release, version VERSION-dev.<short commit>. Run it by hand (Actions > Release > Run workflow)
+# to only build it.
 name: Release
 
 on:
   push:
+    branches: [dev]
     tags: ["v*"]
   workflow_dispatch:
 
 permissions:
-  contents: write  # to create the release
+  contents: write  # to create the release and move the dev tag
+
+# one build per ref at a time; a newer dev push replaces a dev build still running, a tag never does
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/dev' }}
 
 jobs:
   appimage:
@@ -19,7 +27,7 @@ jobs:
       - name: Install build dependencies
         run: >-
           pacman -Syu --noconfirm --needed base-devel git curl patchelf python python-gobject
-          python-cairo python-dbus python-evdev gtk4 libadwaita gtk4-layer-shell glycin
+          python-cairo python-dbus python-evdev gtk4 libadwaita gtk4-layer-shell glycin github-cli
 
       - uses: actions/checkout@v4
 
@@ -36,6 +44,9 @@ jobs:
         run: python -m unittest discover tests
 
       - name: Build the AppImage
+        env:
+          CHANNEL: ${{ startsWith(github.ref, 'refs/tags/') && 'stable' || 'dev' }}
+          COMMIT: ${{ github.sha }}
         run: packaging/appimage/build.sh
 
       - uses: actions/upload-artifact@v4
@@ -49,3 +60,25 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+
+      # Through the API rather than git, so it needs no push access from the checkout. The new assets
+      # go up before the old ones are deleted, so the pre-release always has an AppImage to download.
+      - name: Publish the dev pre-release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/dev" -f sha="$GITHUB_SHA" -F force=true \
+              || gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/dev -f sha="$GITHUB_SHA"
+          notes="Built from $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA on the dev branch. For testing: it can break."
+          if gh release view dev >/dev/null 2>&1; then
+              gh release edit dev --prerelease --latest=false --notes "$notes"
+          else
+              gh release create dev --prerelease --latest=false --verify-tag --title "Dev build" --notes "$notes"
+          fi
+          old=$(gh release view dev --json assets --jq '.assets[].name')
+          gh release upload dev dist/* --clobber
+          for name in $old; do
+              [ -e "dist/$name" ] || gh release delete-asset dev "$name" --yes
+          done

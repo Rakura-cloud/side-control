@@ -46,6 +46,7 @@ python -m unittest discover tests
 tools/screenshots.sh /tmp/shots    # if you changed the UI; needs mutter
 ```
 
+- Open pull requests against the `dev` branch; it is merged into `main` for releases.
 - Keep pull requests focused: one fix or feature each.
 - Match the style of the code around your change; see [AGENTS.md](AGENTS.md) for conventions.
 - The UI follows a fixed design; open an issue before changing how it looks.
@@ -54,9 +55,10 @@ tools/screenshots.sh /tmp/shots    # if you changed the UI; needs mutter
 
 ## Releases
 
-Maintainers: set `VERSION` in `side_control/__init__.py`, then push a tag `v<VERSION>`. GitHub
-Actions builds the AppImage and publishes the release (see [AGENTS.md](AGENTS.md#releasing)). To try
-the AppImage build locally, run `packaging/appimage/build.sh` on Arch Linux.
+Every push to `dev` rebuilds the `dev` pre-release. Maintainers: set `VERSION` in
+`side_control/__init__.py`, then push a tag `v<VERSION>` on `main`. GitHub Actions builds the AppImage
+and publishes the release (see [AGENTS.md](AGENTS.md#releasing)). To try the AppImage build locally,
+run `packaging/appimage/build.sh` on Arch Linux (`CHANNEL=dev` for a dev build).
 
 ## License
 
