@@ -62,7 +62,10 @@ threading.Thread(target=serve, daemon=True).start()
 
 from side_control.app.application import App  # noqa: E402
 from side_control.app.window import PAGES, Window  # noqa: E402
+from side_control.app import config as app_config  # noqa: E402
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
+
+app_config.SHORTCUT_URL = "https://www.icloud.com/shortcuts/0123456789abcdef"  # both QR codes show
 
 
 def shot(win, name):
@@ -86,7 +89,8 @@ def script(win):
     steps = []
     for i, (name, *_rest) in enumerate(PAGES):
         steps += [lambda i=i: win.show_page(i), lambda name=name: shot(win, name.lower())]
-    steps += [lambda: win.show_page(0),
+    steps += [lambda: win.show_add_to_iphone(), lambda: shot(win, "add-to-iphone"), lambda: close_dialog(win),
+              lambda: win.show_page(0),
               lambda: win.show_guide("AA:00:00:00:00:01"), lambda: shot(win, "guide"), lambda: close_dialog(win),
               lambda: win.ask_forget("AA:00:00:00:00:02"), lambda: shot(win, "forget"), lambda: close_dialog(win),
               lambda: win.show_pair(), lambda: shot(win, "pair"), lambda: close_dialog(win),

@@ -41,14 +41,19 @@ ICONS_DIR = os.path.join(PACKAGE, "data", "icons")  # the app icons, and the des
 CSS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "style.css")
 DROPIN_DIR = "/etc/systemd/system/bluetooth.service.d"
 HID_DROPIN = os.path.join(DROPIN_DIR, "side-control-no-input.conf")
+# The Side Control Shortcut on the device (docs/shortcuts.md). iOS only imports Apple-signed shortcuts,
+# so the maintainer builds it once on an iPhone and pastes its iCloud link (Shortcuts > the shortcut >
+# Share > Copy iCloud Link) here. Empty: the Add to iPhone dialog says it is not published yet.
+SHORTCUT_URL = ""
+CLIPBOARD_PORT = 47913  # the clipboard server's port on the LAN, fixed so the setup code can be printed
 
-DEFAULTS = {"share_cursor": True, "share_clipboard": True, "switch_delay_ms": 150, "corner_dead_zones": True,
+DEFAULTS = {"share_cursor": True, "share_clipboard": False, "switch_delay_ms": 150, "corner_dead_zones": True,
             "match_speed": True, "three_finger_switch": True, "shake_to_locate": False, "tap_to_click": True,
             "mouse_natural_scroll": False,
             "indicator": "near", "indicator_within": 48, "indicator_names": True,
             "indicator_style": "Standard", "indicator_color": None, "hide_cursor": True,
             "run_in_background": True, "visible": False, "device_name": None, "adapter": None,
-            "hid_banner_dismissed": False}
+            "hid_banner_dismissed": False, "clipboard_token": None}
 # The edge indicator's styles: name -> (shape, thickness in px, opacity in %).
 INDICATOR_STYLES = {"Subtle": ("solid", 2, 60), "Standard": ("solid", 4, 100), "Bold": ("solid", 8, 100),
                     "Glow": ("glow", 6, 90)}

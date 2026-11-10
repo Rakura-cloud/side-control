@@ -181,8 +181,13 @@ class PagesMixin:
                                          "Move past a screen edge to control the device there",
                                          lambda: (self.send_option("share_cursor"), self.layout_changed()))
         cursor.add(self.share_row)
-        cursor.add(self.switch_row("share_clipboard", "Share Clipboard",
-                                   "Copied text follows the cursor between devices"))
+        share = self.switch_row("share_clipboard", "Share Clipboard",
+                                "Text between the computer and the Side Control Shortcut on the device",
+                                self.update_clipboard)
+        add = Gtk.Button(label="Add to iPhone", valign=Gtk.Align.CENTER)
+        add.connect("clicked", lambda _b: self.show_add_to_iphone())
+        share.add_suffix(add)
+        cursor.add(share)
         page.add(cursor)
 
         general = Adw.PreferencesGroup(title="General")

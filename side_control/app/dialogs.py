@@ -5,7 +5,8 @@ import json
 
 from gi.repository import Adw, GLib, Gtk
 
-from .widgets import crumbs, device_icon, dialog_shell, step_row
+from . import clipboard, config
+from .widgets import crumbs, device_icon, dialog_shell, qr_view, step_row
 
 
 class DialogsMixin:
@@ -97,8 +98,60 @@ class DialogsMixin:
         steps.append(step_row(3, "Optional: turn off Always Show Menu",
                               "Hides the floating button while keeping the cursor"))
         body.append(steps)
+        buttons = Gtk.Box(spacing=12, halign=Gtk.Align.END)
+        add = Gtk.Button(label="Add the Side Control Shortcut")
+        done = Gtk.Button(label="Done", css_classes=["suggested-action"])
+        buttons.append(add)
+        buttons.append(done)
+        body.append(buttons)
+        dialog = dialog_shell(f"Set Up {kind}", 460, body)
+        add.connect("clicked", lambda _b: (dialog.close(), self.show_add_to_iphone(address)))
+        done.connect("clicked", lambda _b: dialog.close())
+        dialog.present(self)
+
+    def show_add_to_iphone(self, address=None):
+        """Two QR codes for the device's camera: the Side Control Shortcut (an iCloud link), then the
+        setup code with this computer's address and token (docs/shortcuts.md)."""
+        dev = self.devs.get(address or "", {})
+        kind = "iPad" if dev.get("form") == "tablet" else "iPhone"
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        body.append(Gtk.Label(label=f"Both codes scan with the {kind}’s camera. The first adds the "
+                                   "Side Control Shortcut, the second tells it where this computer is.",
+                              xalign=0, wrap=True, css_classes=["dim-label"]))
+        code = clipboard.setup_string(clipboard.setup_url(), clipboard.new_token(self.settings))
+        first = (qr_view(config.SHORTCUT_URL) if config.SHORTCUT_URL else
+                 Gtk.Label(label="The Shortcut isn’t published yet", margin_top=12, margin_bottom=12,
+                           css_classes=["dim-label"]))
+        codes = Gtk.Box(spacing=18, homogeneous=True)  # both codes at once, so both scan in a row
+        for number, title, extra in (
+                (1, f"Scan with the {kind}’s camera, then tap Add Shortcut", first),
+                (2, "Run the Shortcut once; it opens the camera — scan this code", qr_view(code))):
+            inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
+                            margin_top=12, margin_bottom=12, margin_start=14, margin_end=14)
+            head = Gtk.Box(spacing=14)
+            head.append(Gtk.Label(label=str(number), css_classes=["step-number"], valign=Gtk.Align.START))
+            head.append(Gtk.Label(label=title, xalign=0, wrap=True, hexpand=True))
+            inner.append(head)
+            inner.append(extra)
+            card = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
+            card.append(Gtk.ListBoxRow(activatable=False, child=inner))
+            codes.append(card)
+        body.append(codes)
+        body.append(Gtk.Label(label="The first run asks iOS to allow Local Network access — tap Allow. "
+                                    "The Shortcut only runs when it is started on the device (Action "
+                                    "Button, Back Tap, Siri, share sheet or widget), not by itself.",
+                              xalign=0, wrap=True, css_classes=["dim-label", "caption"]))
+        other = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
+        row = Adw.ActionRow(title="Type Clipboard on Device",
+                            subtitle="Types the computer’s clipboard into the text field selected on "
+                                     "the device (US layout, 256 characters)")
+        button = Gtk.Button(label="Type", valign=Gtk.Align.CENTER)
+        button.connect("clicked", lambda _b: self.type_clipboard(address))
+        row.add_suffix(button)
+        other.append(row)
+        body.append(other)
         done = Gtk.Button(label="Done", css_classes=["suggested-action"], halign=Gtk.Align.END)
         body.append(done)
-        dialog = dialog_shell(f"Set Up {kind}", 460, body)
+        dialog = dialog_shell(f"Add to {kind}", 620, body)
         done.connect("clicked", lambda _b: dialog.close())
         dialog.present(self)

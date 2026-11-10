@@ -6,6 +6,7 @@ import os
 
 from gi.repository import Adw, GLib, Gdk, Gio, Gtk
 
+from . import clipboard
 from .backend_link import Backend
 from .bluetooth import BluetoothMixin
 from .. import VERSION
@@ -52,6 +53,7 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
         self.nearby = None
         self.pending_guide = None  # address just paired: its setup guide opens once it appears
         self.adapter = None
+        self.clipboard_server = None  # the clipboard server, running while Share Clipboard is on
         self.overlay = EdgeOverlay()
         self.spans = {}
 
@@ -77,6 +79,7 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
         self.locked = False
         self.tray = Tray(self)
         self.backend = Backend(self.on_message, self.on_status)
+        self.update_clipboard()
         self.tray.update()
 
     # --- frame ---
@@ -298,6 +301,33 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
     def send_option(self, key):
         value = self.settings[key]
         self.backend.send(cmd="set_options", **({"discoverable": value} if key == "visible" else {key: value}))
+
+    # --- clipboard ---
+
+    def update_clipboard(self):
+        """Share Clipboard: run the server the device's Shortcut talks to, or stop it. Nothing
+        listens until the user turns it on: a clipboard is private."""
+        if self.clipboard_server:
+            self.clipboard_server.stop()
+            self.clipboard_server = None
+        if self.settings["share_clipboard"]:
+            try:
+                self.clipboard_server = clipboard.ClipboardServer(
+                    clipboard.new_token(self.settings), clipboard.read_text, clipboard.write_text,
+                    self.backend.send)
+                self.clipboard_server.start()
+            except OSError as err:
+                self.clipboard_server = None
+                self.toasts.add_toast(Adw.Toast(title=f"Could not start the clipboard server: {err}"))
+
+    def type_clipboard(self, address=None):
+        """Type Clipboard on Device: the PC's clipboard as keystrokes into the focused field."""
+        text = clipboard.read_text()
+        if not text:
+            self.toasts.add_toast(Adw.Toast(title="The clipboard is empty"))
+            return
+        self.backend.send(cmd="type", address=address, text=text)
+        self.toasts.add_toast(Adw.Toast(title="Typing the clipboard on the device"))
 
     def on_close(self, _window):
         app = self.get_application()

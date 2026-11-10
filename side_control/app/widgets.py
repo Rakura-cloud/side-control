@@ -3,6 +3,8 @@
 
 from gi.repository import Adw, Gtk, Pango
 
+from . import qrcode
+
 
 def device_icon(form):
     return "sc-tablet-android-symbolic" if form == "tablet" else "sc-smartphone-symbolic"
@@ -88,6 +90,29 @@ def step_row(number, title, subtitle=None, extra=None):
         text.append(extra)
     row.append(text)
     return Gtk.ListBoxRow(activatable=False, child=row)
+
+
+def qr_view(text, min_size=220):
+    """A QR code of `text`, drawn with cairo: dark modules on white with the quiet zone, at least
+    `min_size` px on a side and on whole pixels, so a camera gets clean module edges."""
+    matrix = qrcode.encode(text)
+    quiet = 4  # the quiet zone in modules, what scanners expect around a code
+    total = len(matrix) + 2 * quiet
+    scale = max(1, -(-min_size // total))
+    size = total * scale
+    area = Gtk.DrawingArea(content_width=size, content_height=size, halign=Gtk.Align.CENTER)
+
+    def draw(_area, cr, _width, _height):
+        cr.set_source_rgb(1, 1, 1)
+        cr.paint()
+        cr.set_source_rgb(0, 0, 0)
+        for row, line in enumerate(matrix):
+            for col, dark in enumerate(line):
+                if dark:
+                    cr.rectangle((col + quiet) * scale, (row + quiet) * scale, scale, scale)
+        cr.fill()
+    area.set_draw_func(draw)
+    return area
 
 
 def crumbs(*parts):
