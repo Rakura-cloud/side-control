@@ -95,6 +95,49 @@ FINGERS = {e.BTN_TOOL_FINGER: 1, e.BTN_TOOL_DOUBLETAP: 2, e.BTN_TOOL_TRIPLETAP: 
            e.BTN_TOOL_QUADTAP: 4}
 
 
+SHIFT = 0x02  # left shift in the keyboard's modifier byte
+
+
+def _typemap():
+    """US layout (iOS's default hardware keyboard layout): character -> (modifier byte, HID usage) for
+    typing text on a device. A character without a key here (emoji, most accented letters) is skipped."""
+    table = {}
+    for c in "abcdefghijklmnopqrstuvwxyz":
+        usage = KEYMAP[getattr(e, "KEY_" + c.upper())]
+        table[c], table[c.upper()] = (0, usage), (SHIFT, usage)
+    for i, c in enumerate("1234567890"):
+        usage = KEYMAP[getattr(e, "KEY_" + c)]
+        table[c], table["!@#$%^&*()"[i]] = (0, usage), (SHIFT, usage)
+    for plain, shifted, name in (("-", "_", "MINUS"), ("=", "+", "EQUAL"), ("[", "{", "LEFTBRACE"),
+                                 ("]", "}", "RIGHTBRACE"), ("\\", "|", "BACKSLASH"),
+                                 (";", ":", "SEMICOLON"), ("'", '"', "APOSTROPHE"),
+                                 ("`", "~", "GRAVE"), (",", "<", "COMMA"), (".", ">", "DOT"),
+                                 ("/", "?", "SLASH")):
+        usage = KEYMAP[getattr(e, "KEY_" + name)]
+        table[plain], table[shifted] = (0, usage), (SHIFT, usage)
+    table[" "] = (0, KEYMAP[e.KEY_SPACE])
+    table["\n"] = (0, KEYMAP[e.KEY_ENTER])
+    table["\t"] = (0, KEYMAP[e.KEY_TAB])
+    return table
+
+
+TYPEMAP = _typemap()
+
+
+def type_keys(text, limit):
+    """The keys to press for text on a device: ([(modifier byte, usage)], skipped, cut) - how many
+    characters have no key in TYPEMAP and how many were over the length limit."""
+    cut = max(0, len(text) - limit)
+    keys, skipped = [], 0
+    for ch in text[:limit]:
+        key = TYPEMAP.get(ch)
+        if key:
+            keys.append(key)
+        else:
+            skipped += 1
+    return keys, skipped, cut
+
+
 def listen(addr, psm):
     s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

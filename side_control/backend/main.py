@@ -16,7 +16,8 @@ from . import config
 from .bluez import paired_devices, setup_bluez
 from .bridge import Bridge
 from .compositor import Hyprland
-from .config import BATTERY_EVERY, INPUT_RESCAN_S, MOUSE_INTERVAL, NAME, RECONNECT_EVERY, SOCK_PATH
+from .config import (BATTERY_EVERY, INPUT_RESCAN_S, MOUSE_INTERVAL, NAME, RECONNECT_EVERY, SOCK_PATH,
+                     TYPE_DELAY_S)
 from .control import Control
 from .devices import Fleet
 from .events import log
@@ -73,6 +74,7 @@ def main():
     bridge.handoff = Handoff(bridge, fleet, proximity, compositor)
     control = Control(bridge, fleet, proximity, bus, adapter_path)
     control.start()
+    bridge.request_paste = control.request_paste  # the paste chord needs the GUI to read the clipboard
     log(f'"{NAME}" is discoverable - pair each iPhone / iPad from its Bluetooth settings')
     last_dial = last_scan = 0.0
 
@@ -98,6 +100,7 @@ def main():
                 owners[phone.intr] = (phone, "intr")
         ready, _, _ = select.select([*(s for s in (ctrl_l, intr_l) if s), *owners, *bridge.devices, *control.sockets()],
                                     [], [], MOUSE_INTERVAL if bridge.mouse_pending()
+                                    else TYPE_DELAY_S if bridge.typing
                                     else 0.02 if control.calib else 0.1 if control.clients else 1)
         for r in ready:
             if r is ctrl_l:
@@ -137,6 +140,7 @@ def main():
                 if phone.battery_t and now - phone.battery_t > BATTERY_EVERY:
                     phone.refresh_battery()
         control.pump()
+        bridge.step_typing()  # type the next clipboard character when it is due
         if bridge.on_phone:
             bridge.flush_mouse()  # send motion that was held back
         if not bridge.phone.connected:

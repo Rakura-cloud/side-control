@@ -28,6 +28,8 @@ from .config import (
     MOUSE_INTERVAL,
     MOUSE_PAUSE_S,
     MOUSE_SPEED,
+    PASTE_KEY,
+    PASTE_MODS,
     PINCH_STEP_MM,
     SCAN_WHILE_CONTROLLING,
     SCROLL_STEP_MM,
@@ -40,12 +42,14 @@ from .config import (
     THREE_FINGER_FROM_PC,
     TOGGLE,
     TOUCHPAD_SPEED,
+    TYPE_DELAY_S,
+    TYPE_MAX,
     ZOOM_IN,
     ZOOM_OUT,
 )
 from .devices import NO_PHONE
 from .events import EVENTS, log
-from .hid import BUTTONS, FINGERS, KEYMAP, MODS, disable_sniff
+from .hid import BUTTONS, FINGERS, KEYMAP, MODS, disable_sniff, type_keys
 from .inputs import Accel, Shake, Touchpad, is_touchpad, scan_inputs
 
 
@@ -65,6 +69,14 @@ class Bridge:
         self.shake = Shake()
         self.handoff = None  # set by main() once Proximity exists
         self.proximity = None
+        self.request_paste = None  # set by main() to Control.request_paste: asks the GUI for the
+                                   # computer's clipboard, False with no GUI attached to read it
+        self.paste_replay = None   # (modifier byte, usage) of the paste chord swallowed last: pressed
+                                   # on the device when the clipboard had nothing to type
+        self.paste_held = False    # the paste chord's V is down: its repeats and release are ours too
+        self.typing = []           # (modifier byte, usage) presses left to type from the clipboard...
+        self.typing_phone = None   # ...on the device in control at the time
+        self.typing_at = 0.0       # when the next one is due
         self.rel = [0, 0]    # mouse motion collected until the next SYN while the PC has control
         self.rel_t = 0.0     # when that motion last went to the hand-off
         self.reset_reports()
@@ -177,6 +189,11 @@ class Bridge:
                 tp.track(ev)
                 if ev.type == e.EV_SYN:
                     self.three_finger_switch(tp)
+            if ev.type == e.EV_KEY and ev.code == PASTE_KEY and self.paste_held and ev.value != 1:
+                if not ev.value:  # its press was the paste chord: the device never saw V go down
+                    self.paste_held = False
+                    self.held.discard(ev.code)
+                continue
             if ev.type == e.EV_KEY and ev.value != 2:
                 if self.track_toggle(ev):
                     continue
@@ -325,6 +342,8 @@ class Bridge:
                         self.phone.send(1, bytes(8))  # let go of the modifiers on the device first
                     self.action_pending = action
                     return True
+            if self.track_paste(mods, ev.code):
+                return True
             if self.on_phone and ev.code in ACTIONS and ACTION_MODS <= self.held:
                 self.phone.send(1, bytes(8))  # let go of Ctrl+Alt on the phone first
                 self.click(ACTIONS[ev.code])
@@ -333,6 +352,19 @@ class Bridge:
         else:
             self.held.discard(ev.code)
         return False
+
+    def track_paste(self, mods, key):
+        """Ctrl+V / Super+V while a device has control and Share Clipboard is on: ask the GUI to read
+        the computer's clipboard and type it here (this process runs without a Wayland session). True:
+        the chord is ours and is not typed on the device; False: it goes there as usual."""
+        if not (self.on_phone and config.SHARE_CLIPBOARD and key == PASTE_KEY and mods in PASTE_MODS):
+            return False
+        if not (self.request_paste and self.request_paste()):  # no GUI attached to read the clipboard
+            return False
+        self.phone.send(1, bytes(8))  # let go of Ctrl/Super on the device first
+        self.paste_held = True
+        self.paste_replay = (MODS[e.KEY_LEFTCTRL if "ctrl" in mods else e.KEY_LEFTMETA], KEYMAP[key])
+        return True
 
     def key_event(self, ev):
         if ev.code in MODS:
@@ -493,6 +525,45 @@ class Bridge:
         """Press and release one shortcut on the phone, then restore the keys really held."""
         self.phone.send(1, [mods, 0, usage, 0, 0, 0, 0, 0])
         self.phone.send(1, [self.mods, 0] + (self.keys + [0] * 6)[:6])
+
+    def type_text(self, text):
+        """The GUI's answer to a paste chord: type the computer's clipboard's text on the device in
+        control (Share Clipboard). With nothing to type, the chord goes to the device after all."""
+        chord, self.paste_replay = self.paste_replay, None
+        keys, skipped, cut = type_keys(text or "", TYPE_MAX)
+        if cut:
+            log(f"clipboard text cut to {TYPE_MAX} characters ({cut} left out)")
+        if skipped:
+            log(f"{skipped} clipboard character(s) skipped - no key for them on a US keyboard")
+        if not keys:
+            if chord:
+                self.tap_key(*chord)  # nothing to type: the chord passes to the device as usual
+            return
+        if self.typing and self.typing_phone is self.phone:
+            self.typing += keys
+        else:
+            self.typing, self.typing_phone, self.typing_at = keys, self.phone, time.monotonic()
+        log(f"typing {len(keys)} characters on {self.phone.alias}")
+
+    def step_typing(self):
+        """Type one clipboard character per TYPE_DELAY_S: the loop must never block for a whole text.
+        The keys are ours alone, so the pointer model of the hand-off never hears of them. Stops when
+        the device loses control or disconnects."""
+        if not self.typing:
+            return
+        if not (self.on_phone and self.phone is self.typing_phone and self.typing_phone.connected):
+            log("typing stopped: the device no longer has the keyboard")
+            self.typing = []
+            return
+        now = time.monotonic()
+        if now < self.typing_at:
+            return
+        mods, usage = self.typing.pop(0)
+        self.typing_at = now + TYPE_DELAY_S
+        self.phone.send(1, [mods, 0, usage, 0, 0, 0, 0, 0])
+        self.phone.send(1, bytes(8))  # key up: the all-keys-released report
+        if not self.typing:
+            self.phone.send(1, [self.mods, 0] + (self.keys + [0] * 6)[:6])  # the keys really held
 
     def mouse_pending(self):
         return self.on_phone and (abs(self.dx) >= 1 or abs(self.dy) >= 1 or self.wheel or self.pan

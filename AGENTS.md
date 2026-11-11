@@ -35,6 +35,7 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 | `config.py` | Paths, defaults, the settings file, Launch at Login, `BACKEND_COMMAND` (differs inside the AppImage), `SERVICE`. |
 | `system.py` | bluetoothd's plugins, whether the service is installed and the root commands that install it, adapter names, Hyprland IPC. |
 | `backend_link.py` | `Backend`: the socket client, reconnects by itself. |
+| `clipboard.py` | `send_clipboard`: the computer's clipboard for Share Clipboard (wl-paste, GTK fallback). |
 | `geometry.py` | Arrangement maths, ported from the design. No GTK: tested in `tests/test_geometry.py`. |
 | `arrangement.py`, `widgets.py`, `overlay.py`, `tray.py` | The canvas, shared widgets, the edge indicator, the tray icon and menu. |
 | `style.css` | The app's CSS. |
@@ -62,9 +63,9 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 - The app talks to the backend through newline-delimited JSON on `$XDG_RUNTIME_DIR/side-control.sock`
   (`SIDE_CONTROL_SOCK` overrides it). See the `Control` docstring in `backend/control.py`.
 - App → backend commands: `set_target`, `set_handoff`, `forget`, `set_options`, `discover`, `pair`,
-  `quit`, `calibrate`, `action`.
+  `quit`, `calibrate`, `action`, `type_text`.
 - Backend → app: `state` snapshots (devices, target, sharing, nearby, ...) and events `log`, `rssi`,
-  `paired`, `shake`, `open`, `calibration`.
+  `paired`, `shake`, `open`, `calibration`, `paste`.
 - The backend runs as the user, never as root: `side-control@<uid>.service` gives it the `input` group
   and `CAP_NET_BIND_SERVICE` (listen on PSM 17/19), `CAP_NET_RAW` (`hid.disable_sniff`) and
   `CAP_NET_ADMIN` (`btmgmt class`). Without them it still runs, with less: dial-only, no inputs, sniff

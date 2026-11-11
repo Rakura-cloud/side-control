@@ -47,6 +47,10 @@ class Control:
     server -> client also: {"type": "paired", "address": ..., "ok": ..., "error": ...}
                            {"type": "shake"}  the PC pointer was shaken
                            {"type": "open"}   Super+Alt+D: show the GUI
+                           {"type": "paste"}  Ctrl+V / Super+V on a device (Share Clipboard): read the
+                            clipboard and answer with type_text
+    client -> server also: {"cmd": "type_text", "text": ...}  type this text on the device in control;
+                            no text: the paste chord goes to the device instead
     """
 
     def __init__(self, bridge, fleet, proximity, bus=None, adapter_path=None):
@@ -148,6 +152,8 @@ class Control:
             self.quit = True
         elif cmd == "calibrate":
             self.calibrate(msg)
+        elif cmd == "type_text":
+            self.bridge.type_text(msg.get("text"))
         elif cmd == "action":
             phone = self.fleet.phones.get(msg.get("address")) or self.bridge.phone
             bit = ACTIONS.get(getattr(e, "KEY_" + str(msg["key"]).upper(), None))
@@ -243,6 +249,15 @@ class Control:
         if due > 0:
             self.bridge.send_on(c["phone"], *((due, 0) if c["axis"] == "x" else (0, due)))
             c["sent"] += due
+
+    def request_paste(self):
+        """A paste chord on a device (Share Clipboard): ask the GUI to read the computer's clipboard
+        and answer with type_text. False: no GUI is attached to read it, so the chord must go to the
+        device unchanged instead."""
+        if not self.clients:
+            return False
+        EVENTS.append({"type": "paste"})
+        return True
 
     def state(self):
         devices = []

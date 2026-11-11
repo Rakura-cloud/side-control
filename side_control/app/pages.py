@@ -182,7 +182,8 @@ class PagesMixin:
                                          lambda: (self.send_option("share_cursor"), self.layout_changed()))
         cursor.add(self.share_row)
         cursor.add(self.switch_row("share_clipboard", "Share Clipboard",
-                                   "Copied text follows the cursor between devices"))
+                                   "Ctrl+V on a device types the computer’s clipboard",
+                                   lambda: self.send_option("share_clipboard")))
         page.add(cursor)
 
         general = Adw.PreferencesGroup(title="General")
