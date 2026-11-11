@@ -32,6 +32,7 @@ Two programs in one package, `side_control/`, sharing only `side_control/__init_
 | `pages.py` | `PagesMixin`: the five pages. |
 | `dialogs.py` | `DialogsMixin`: pairing, forgetting, the AssistiveTouch guide. |
 | `bluetooth.py` | `BluetoothMixin`: adapter, name, Own HID Profile, installing (`pkexec`) and starting the backend's service. |
+| `update.py` | `UpdateMixin`: checking GitHub for a newer version, and downloading it into the AppImage. |
 | `config.py` | Paths, defaults, the settings file, Launch at Login, `BACKEND_COMMAND` (differs inside the AppImage), `SERVICE`. |
 | `system.py` | bluetoothd's plugins, whether the service is installed and the root commands that install it, adapter names, Hyprland IPC. |
 | `backend_link.py` | `Backend`: the socket client, reconnects by itself. |

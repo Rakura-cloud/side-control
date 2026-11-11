@@ -168,7 +168,8 @@ class BluetoothMixin:
             _ok, _out, err = proc.communicate_utf8_finish(result)
         except GLib.Error as error:
             err = error.message
-        if proc.get_exit_status() != 0 and not self.alive and not self.restart_backend:
+        if proc.get_exit_status() != 0 and not self.alive and not self.restart_backend \
+                and not self.restarting:
             # pkexec and systemctl say why they failed; why the backend stopped is in its log
             last = (err or "").strip().splitlines()[-1:] or [last_log_line(SERVICE) or f"see journalctl -u {SERVICE}"]
             self.toasts.add_toast(Adw.Toast(title=f"Backend stopped: {last[0]}"[:160]))

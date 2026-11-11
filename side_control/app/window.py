@@ -26,6 +26,7 @@ from .overlay import EdgeOverlay
 from .pages import PagesMixin
 from .system import hyprland
 from .tray import Tray
+from .update import UpdateMixin
 from .widgets import DeviceRow
 
 
@@ -36,7 +37,7 @@ PAGES = [("devices", "Devices", "sc-devices-symbolic"),
          ("settings", "Settings", "sc-settings-symbolic")]
 
 
-class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
+class Window(PagesMixin, DialogsMixin, BluetoothMixin, UpdateMixin, Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Side Control", default_width=1040, default_height=700)
         self.settings = load_settings()
@@ -44,6 +45,7 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
         self.resync = True
         self.started_backend = False  # tried to start it once already
         self.restart_backend = False  # waiting for the backend to quit, then start it on another adapter
+        self.restarting = False  # restarting into an update: nothing to bring back up meanwhile
         self.hid_change = None  # shell command for root to run once the backend has quit: see on_hid
         self.devs = {}  # address -> last device dict from the backend
         self.rows = {}
@@ -78,6 +80,7 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
         self.tray = Tray(self)
         self.backend = Backend(self.on_message, self.on_status)
         self.tray.update()
+        self.start_update_checks()
 
     # --- frame ---
 
@@ -118,9 +121,12 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
             title="System Bluetooth input is disabled — mice and keyboards can’t connect to this "
                   "computer while Side Control owns HID.", button_label="Dismiss")
         self.hid_banner.connect("button-clicked", self.dismiss_hid_banner)
+        self.update_banner = Adw.Banner(use_markup=True, revealed=False)
+        self.update_banner.connect("button-clicked", self.on_update_button)
         view = Adw.ToolbarView(content=self.stack)
         view.add_top_bar(header)
         view.add_top_bar(self.hid_banner)
+        view.add_top_bar(self.update_banner)
         self.content_page = Adw.NavigationPage(title="Devices", child=view)
         self.sidebar.set_selected(0)
         return self.content_page
@@ -176,6 +182,8 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
         if alive:
             self.resync = True
             self.refresh_hid()
+            return
+        if self.restarting:  # about to start again from an update: nothing to bring up
             return
         self.target, self.locked = None, False
         for address in list(self.rows):

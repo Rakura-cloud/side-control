@@ -176,6 +176,17 @@ class PagesMixin:
 
     def _settings_page(self):
         page = Adw.PreferencesPage()
+        updates = Adw.PreferencesGroup(title="Updates")
+        version = Adw.ActionRow(title="Version")
+        version.add_suffix(Gtk.Label(label=VERSION, css_classes=["dim-label"]))
+        updates.add(version)
+        updates.add(self.switch_row("check_updates", "Check for Updates",
+                                    "Look for a new version of Side Control once a day", self.check_updates))
+        updates.add(self.switch_row("dev_builds", "Dev Builds",
+                                    "Get test builds from the dev branch before they are released",
+                                    self.check_updates_now))
+        page.add(updates)
+
         cursor = Adw.PreferencesGroup(title="Cursor")
         self.share_row = self.switch_row("share_cursor", "Share Cursor",
                                          "Move past a screen edge to control the device there",
@@ -213,12 +224,9 @@ class PagesMixin:
         page.add(bluetooth)
 
         about = Adw.PreferencesGroup(title="About")
-        version = Adw.ActionRow(title="Version")
-        version.add_suffix(Gtk.Label(label=VERSION, css_classes=["dim-label"]))
         report = Adw.ActionRow(title="Report an Issue", activatable=True)
         report.add_suffix(Gtk.Image(icon_name="sc-open-in-new-symbolic"))
         report.connect("activated", self.on_report)
-        about.add(version)
         about.add(report)
         page.add(about)
         return page

@@ -38,6 +38,14 @@ STATE = {
          "signal": None}]}
 NEARBY = [{"address": "BB:00:00:00:00:01", "name": "Pixel Tablet", "os": "Android", "form": "tablet"},
           {"address": "BB:00:00:00:00:02", "name": "Galaxy S24", "os": "Android", "form": "phone"}]
+# A newer release than the running version, to show the update banner with (nothing is downloaded)
+FAKE_RELEASE = {
+    "html_url": "https://github.com/Rakura-cloud/side-control/releases/tag/v0.2.0",
+    "assets": [
+        {"name": "Side_Control-0.2.0-x86_64.AppImage", "size": 62914560,
+         "browser_download_url": "https://example.org/Side_Control-0.2.0-x86_64.AppImage"},
+        {"name": "Side_Control-0.2.0-x86_64.AppImage.zsync", "size": 2048,
+         "browser_download_url": "https://example.org/Side_Control-0.2.0-x86_64.AppImage.zsync"}]}
 received = []
 
 
@@ -60,9 +68,18 @@ def serve():
 
 threading.Thread(target=serve, daemon=True).start()
 
+from side_control.app import update  # noqa: E402
 from side_control.app.application import App  # noqa: E402
 from side_control.app.window import PAGES, Window  # noqa: E402
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
+
+
+def offline(*_args):
+    raise OSError("the screenshots run without network")
+
+
+update.fetch_release = offline  # the update check finds nothing by itself here
+update.APPIMAGE = os.path.join(TMP, "Side_Control-0.1.0-x86_64.AppImage")  # as if running from one
 
 
 def shot(win, name):
@@ -90,6 +107,9 @@ def script(win):
               lambda: win.show_guide("AA:00:00:00:00:01"), lambda: shot(win, "guide"), lambda: close_dialog(win),
               lambda: win.ask_forget("AA:00:00:00:00:02"), lambda: shot(win, "forget"), lambda: close_dialog(win),
               lambda: win.show_pair(), lambda: shot(win, "pair"), lambda: close_dialog(win),
+              lambda: win.show_page(0),
+              lambda: win.show_update(update.check_release(FAKE_RELEASE, update.VERSION, "stable")),
+              lambda: shot(win, "update"),
               lambda: print("sent to the backend:", *received, sep="\n  "),
               lambda: win.get_application().quit()]
 
