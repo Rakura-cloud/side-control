@@ -198,7 +198,10 @@ class PagesMixin:
                 subtitle="Gives Side Control the pointer position and warp, so edge hand-off works. "
                          "On Wayland it only loads after logging out and back in",
                 activatable=True)
-            gnome_row.connect("activated", self.on_gnome_extension)
+            install = Gtk.Button(label="Install", valign=Gtk.Align.CENTER)
+            install.connect("clicked", self.on_gnome_extension)
+            gnome_row.add_suffix(install)
+            gnome_row.set_activatable_widget(install)
             general.add(gnome_row)
         page.add(general)
 
@@ -288,7 +291,7 @@ class PagesMixin:
         try:
             install_gnome_extension()
         except OSError as err:
-            self.toasts.add_toast(Adw.Toast(title=f"Could not install the GNOME Shell extension: {err.strerror}"))
+            self.toasts.add_toast(Adw.Toast(title=f"Could not install the GNOME Shell extension: {err.strerror or err}"[:160]))
         else:
             self.toasts.add_toast(Adw.Toast(title="GNOME Shell extension installed - log out and back in to load it"))
 
