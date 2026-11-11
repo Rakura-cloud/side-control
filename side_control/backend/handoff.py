@@ -48,9 +48,11 @@ class Handoff:
     screen size, so an iPhone on the left and an iPad on the right can both be reached.
 
     PC -> device: Bridge feeds finger motion in here while the PC has control. When the pointer sits
-    on a configured edge (found via Hyprland) and the finger keeps pushing, and - if asked - the
-    device is near enough (Proximity), control switches and the device's pointer is pinned against
-    the side it enters from, at the same relative height.
+    on a configured edge (found through the compositor) and the finger keeps pushing, and - if asked -
+    the device is near enough (Proximity), control switches and the device's pointer is pinned against
+    the side it enters from, at the same relative height. A compositor that cannot say where the PC
+    pointer is (see Compositor) never gets here: edge hand-off is off, and only the hotkey and the
+    app switch.
 
     device -> PC: the device never reports its pointer position, so we keep a model of it: it is known
     right after the pin, and every report we send moves it (clamped to the screen size). Pushing past
@@ -97,7 +99,8 @@ class Handoff:
             if clash:
                 log(f"hand-off: {clash} is also set to the {phone.zone}; the first one found wins")
             if not self.comp.available:
-                log("hand-off needs Hyprland: no IPC socket found, the PC pointer cannot be located")
+                log(f"hand-off: {self.comp.name} cannot locate the PC pointer - edge hand-off is off, "
+                    "the hotkey and the app still switch")
 
     def status(self):
         return {"available": self.comp.available,
@@ -219,8 +222,10 @@ class Handoff:
         if not edges or not edges[edge]:
             return
         x, y = point_on_edge(edges[edge], edge, frac, RETURN_INSET_PX)
-        self.comp.warp(x, y)
-        log(f"pointer returned to the PC at its {edge} edge")
+        if self.comp.warp(x, y):
+            log(f"pointer returned to the PC at its {edge} edge")
+        else:
+            log(f"control returned to the PC at its {edge} edge")  # the pointer cannot be moved here
 
     def on_leave(self):
         self.edge = None

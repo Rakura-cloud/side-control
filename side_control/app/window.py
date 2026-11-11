@@ -310,8 +310,11 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
 
     def enlarge_cursor(self):
         """Shake to Locate: make the cursor big for a moment (Hyprland)."""
-        theme = os.environ.get("XCURSOR_THEME") or Gio.Settings(schema_id="org.gnome.desktop.interface") \
-            .get_string("cursor-theme")
+        try:
+            theme = os.environ.get("XCURSOR_THEME") or Gio.Settings(schema_id="org.gnome.desktop.interface") \
+                .get_string("cursor-theme")
+        except GLib.Error:  # not every desktop has GNOME's settings (niri, KDE)
+            theme = "Adwaita"
         size = int(os.environ.get("XCURSOR_SIZE") or 24)
         if hyprland(f"setcursor {theme} {size * 3}") is None:
             return

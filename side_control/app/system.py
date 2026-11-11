@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Facts about this computer: bluetoothd's plugins, the backend's service, Bluetooth adapters, Hyprland."""
+"""Facts about this computer: bluetoothd's plugins, the backend's service, Bluetooth adapters, and
+the session's compositor (Hyprland's IPC socket, the compositor's environment)."""
 
 import os
 import shlex
 import socket
 import subprocess
+import sys
 
 from .config import DROPIN_DIR, RULES_PATH, SERVICE_RULES, SERVICE_UNIT, UNIT_PATH
 
@@ -121,19 +123,40 @@ def adapter_label(hci):
     return f"{hci} · {name or uevent.get('DRIVER', 'Bluetooth')}"
 
 
+_missing_logged = False
+
+
 def hyprland(command):
-    """Send one command to Hyprland's IPC socket; None if Hyprland is not there."""
+    """Send one command to Hyprland's IPC socket; None if Hyprland is not there. The edge indicator
+    polls this, so the absence is logged once, not once per poll."""
+    global _missing_logged
     sig, runtime = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"), os.environ.get("XDG_RUNTIME_DIR")
-    if not (sig and runtime):
-        return None
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(0.3)
-            sock.connect(f"{runtime}/hypr/{sig}/.socket.sock")
-            sock.sendall(command.encode())
-            reply = b""
-            while chunk := sock.recv(65536):
-                reply += chunk
+    if sig and runtime:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.3)
+                sock.connect(f"{runtime}/hypr/{sig}/.socket.sock")
+                sock.sendall(command.encode())
+                reply = b""
+                while chunk := sock.recv(65536):
+                    reply += chunk
             return reply.decode(errors="replace")
-    except OSError:
-        return None
+        except OSError:
+            pass
+    if not _missing_logged:
+        _missing_logged = True
+        why = "HYPRLAND_INSTANCE_SIGNATURE is not set" if not sig else "its IPC socket does not answer"
+        print(f"side-control: no Hyprland ({why}): the edge indicator cannot follow the cursor and "
+              "Shake to Locate does nothing", file=sys.stderr, flush=True)
+    return None
+
+
+COMPOSITOR_ENV = ("HYPRLAND_INSTANCE_SIGNATURE", "NIRI_SOCKET", "XDG_CURRENT_DESKTOP")
+
+
+def compositor_exports():
+    """The session's compositor variables, as shell export lines for the command the backend's
+    service runs (bluetooth.py): the service starts without the session's environment, and the
+    backend picks its compositor from these (backend/compositor.py, detect())."""
+    return "\n".join(f"export {var}={shlex.quote(os.environ[var])}" for var in COMPOSITOR_ENV
+                     if os.environ.get(var))
