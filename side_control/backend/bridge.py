@@ -9,7 +9,6 @@ from evdev import ecodes as e
 
 from . import config
 from .config import (
-    ACTIONS,
     ACTION_MODS,
     APP_ZOOM_IN,
     APP_ZOOM_OUT,
@@ -18,11 +17,9 @@ from .config import (
     FLICK_PAUSE_S,
     FLICK_REPORTS,
     FLICK_ROOM,
-    FLICK_STEP,
     GESTURE_LOCK_MM,
     GLIDE_PAUSE_S,
     GLIDE_STEP,
-    HOTKEYS,
     MOD_KEYS,
     MOUSE_COUNTS_PER_MM,
     MOUSE_INTERVAL,
@@ -31,14 +28,11 @@ from .config import (
     PINCH_STEP_MM,
     SCAN_WHILE_CONTROLLING,
     SCROLL_STEP_MM,
-    SWIPE_SIDE_BUTTON,
-    SWIPE_UP_BUTTON,
     SWIPE_UP_MM,
     SWITCH_SWIPE_MM,
     TAP_TIME,
     TAP_TRAVEL_MM,
     THREE_FINGER_FROM_PC,
-    TOGGLE,
     TOUCHPAD_SPEED,
     ZOOM_IN,
     ZOOM_OUT,
@@ -59,7 +53,7 @@ class Bridge:
         self.seen = set()  # input device nodes looked at (see scan_inputs)
         self.on_phone = False
         self.toggle_pending = False
-        self.action_pending = None  # a HOTKEYS action, run once every key is up again
+        self.action_pending = None  # a hotkey action, run once every key is up again
         self.held = set()
         self.locked = False  # Scroll Lock: the pointer stays on the screen it is on
         self.shake = Shake()
@@ -246,9 +240,10 @@ class Bridge:
             self.switch_to(target)
 
     def three_finger_switch(self, tp):
-        """Three-finger swipe left/right. On a device: its App Switcher. On the PC, only with
-        THREE_FINGER_FROM_PC: the previous / next device, once every finger is off the pad (grabbing the
-        touchpad mid-swipe would leave the compositor half a gesture, a workspace swipe that never ends)."""
+        """Three-finger swipe left/right. On a device: the action its gesture is set to (its App
+        Switcher by default). On the PC, only with THREE_FINGER_FROM_PC: the previous / next device,
+        once every finger is off the pad (grabbing the touchpad mid-swipe would leave the compositor
+        half a gesture, a workspace swipe that never ends)."""
         if tp.three_step and not tp.contacts:
             step, tp.three_step = tp.three_step, 0
             if not self.on_phone:
@@ -260,12 +255,15 @@ class Bridge:
             return
         if tp.three is None:
             tp.three = x
-        elif (not tp.three_done and not tp.swiped and abs(x - tp.three) >= SWITCH_SWIPE_MM
-              and config.THREE_FINGER_SWITCH):
+        elif not tp.three_done and not tp.swiped and abs(x - tp.three) >= SWITCH_SWIPE_MM:
             tp.three_done = True
+            act = config.GESTURE_ACTIONS.get("swipe_side",
+                                             "button8" if config.THREE_FINGER_SWITCH else "none")
             if self.on_phone:
-                self.click(SWIPE_SIDE_BUTTON)
-                log("three-finger swipe left/right -> App Switcher")
+                if act != "none":
+                    self.click(config.GESTURE_BUTTONS[act])
+                    log(f"three-finger swipe left/right -> mouse button "
+                        f"{config.GESTURE_BUTTONS[act].bit_length()}")
             elif THREE_FINGER_FROM_PC:
                 tp.three_step = 1 if x > tp.three else -1
 
@@ -315,20 +313,20 @@ class Bridge:
             return False
         if ev.value:
             self.held.add(ev.code)
-            if TOGGLE <= self.held:
+            if config.TOGGLE <= self.held:
                 self.toggle_pending = True
                 return True
             mods = {MOD_KEYS[k] for k in self.held if k in MOD_KEYS}
-            for need, key, action in HOTKEYS:
+            for need, key, action in config.HOTKEYS:
                 if ev.code == key and mods == need:
                     if self.on_phone and mods:
                         self.phone.send(1, bytes(8))  # let go of the modifiers on the device first
                     self.action_pending = action
                     return True
-            if self.on_phone and ev.code in ACTIONS and ACTION_MODS <= self.held:
+            if self.on_phone and ev.code in config.ACTIONS and ACTION_MODS <= self.held:
                 self.phone.send(1, bytes(8))  # let go of Ctrl+Alt on the phone first
-                self.click(ACTIONS[ev.code])
-                log(f"hotkey -> mouse button {ACTIONS[ev.code].bit_length()}")
+                self.click(config.ACTIONS[ev.code])
+                log(f"hotkey -> mouse button {config.ACTIONS[ev.code].bit_length()}")
                 return True
         else:
             self.held.discard(ev.code)
@@ -417,11 +415,14 @@ class Bridge:
                     tp.travel += math.hypot(mx, my)
                     if tp.fingers >= 3 and not tp.click_bit:
                         tp.swipe += my
+                        act = config.GESTURE_ACTIONS.get("swipe_up",
+                                                         "button4" if config.SWIPE_UP_HOME else "none")
                         if (tp.swipe < -SWIPE_UP_MM and not tp.swiped and not tp.three_done
-                                and config.SWIPE_UP_HOME):
+                                and act != "none"):
                             tp.swiped = True
-                            self.click(SWIPE_UP_BUTTON)
-                            log("three-finger swipe up -> Home")
+                            self.click(config.GESTURE_BUTTONS[act])
+                            log(f"three-finger swipe up -> mouse button "
+                                f"{config.GESTURE_BUTTONS[act].bit_length()}")
                     elif tp.fingers >= 2 and not tp.click_bit:
                         self.two_finger_gesture(tp, mx, my)
                     else:
@@ -449,18 +450,31 @@ class Bridge:
                 tp.gesture = "h" if abs(tp.move[0]) > abs(tp.move[1]) else "v"
             (mx, my), pinch, tp.zoom = tp.move, tp.zoom, 0.0  # the deciding travel counts too
         if tp.gesture == "pinch":
+            act = config.GESTURE_ACTIONS.get("pinch", "zoom")
+            if act == "none":
+                return
             tp.zoom += pinch
             steps = int(tp.zoom / PINCH_STEP_MM)
             tp.zoom -= steps * PINCH_STEP_MM
-            zoom_in, zoom_out = (APP_ZOOM_IN, APP_ZOOM_OUT) if self.mods & CTRL else (ZOOM_IN, ZOOM_OUT)
-            for _ in range(abs(steps)):
-                self.tap_key(*(zoom_in if steps > 0 else zoom_out))
+            if act == "zoom":
+                zoom_in, zoom_out = (APP_ZOOM_IN, APP_ZOOM_OUT) if self.mods & CTRL else (ZOOM_IN, ZOOM_OUT)
+                for _ in range(abs(steps)):
+                    self.tap_key(*(zoom_in if steps > 0 else zoom_out))
+            else:
+                for _ in range(abs(steps)):
+                    self.click(config.GESTURE_BUTTONS[act])
             return
-        if tp.gesture == "h" and config.SWIPE_FLICK:
+        act = config.GESTURE_ACTIONS.get("swipe_lr", "flick" if config.SWIPE_FLICK else "scroll")
+        if tp.gesture == "h" and act != "scroll":
             tp.scroll += mx
             if not tp.flicked and abs(tp.scroll) >= FLICK_MM:
                 tp.flicked = True
-                self.flick((1 if tp.scroll > 0 else -1) * (1 if config.NATURAL_SCROLL else -1))
+                if act == "flick":
+                    self.flick((1 if tp.scroll > 0 else -1) * (1 if config.NATURAL_SCROLL else -1))
+                elif act != "none":
+                    self.click(config.GESTURE_BUTTONS[act])
+                    log(f"two-finger swipe left/right -> mouse button "
+                        f"{config.GESTURE_BUTTONS[act].bit_length()}")
             return
         tp.scroll += mx if tp.gesture == "h" else my
         steps = int(tp.scroll / SCROLL_STEP_MM)
@@ -472,17 +486,19 @@ class Bridge:
 
     def flick(self, direction):
         """Turn one page: drag the content fast towards `direction` (-1 left, +1 right) and let go, then
-        bring the pointer back the same way, report by report."""
+        bring the pointer back the same way, report by report. The drag is config.flick_length() counts, set by
+        the Swipe Length setting."""
         h = self.handoff
+        length = config.flick_length()
         if h and h.edge is not None:  # where the pointer is known: make room before the edge first
             w, _ = self.phone.size()
-            need = FLICK_ROOM * FLICK_STEP * FLICK_REPORTS
+            need = FLICK_ROOM * length
             room = h.vx if direction < 0 else w - h.vx
             if room < need:
                 away = -direction * round(need - room)
                 self.glide(away, 0, pause=0.0)
                 h.vx += away
-        out = (direction * FLICK_STEP, 0, None)
+        out = (direction * round(length / FLICK_REPORTS), 0, None)
         self.steps.extend([(0, 0, True), *[out] * (FLICK_REPORTS - 1), (out[0], 0, False), FLICK_PAUSE_S,
                            *[(-out[0], 0, None)] * FLICK_REPORTS])
 

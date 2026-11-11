@@ -290,6 +290,8 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
 
     def send_options(self):
         options = {k: self.settings[k] for k in BACKEND_OPTIONS}
+        options["shortcuts"] = self.settings["shortcuts"]
+        options["gesture_actions"] = self.settings["gesture_actions"]
         options["discoverable"] = self.settings["visible"]
         if self.settings["device_name"]:
             options["device_name"] = self.settings["device_name"]

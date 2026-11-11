@@ -14,7 +14,6 @@ from gi.repository import GLib
 from . import config
 from .bluez import nearby_devices, paired_devices
 from .config import (
-    ACTIONS,
     CALIBRATE_MAX_S,
     CALIBRATE_RATE,
     CALIBRATE_REACTION_S,
@@ -40,7 +39,8 @@ class Control:
                       {"cmd": "action", "address": ..., "key": "h"}   press the Ctrl+Alt+<key> button
                       {"cmd": "forget", "address": ...}   unpair a device
                       {"cmd": "set_options", "natural_scroll": true, ...}   see OPTIONS, plus
-                       "device_name" (adapter alias), "discoverable" and "locked" (Scroll Lock)
+                       "shortcuts" (config.set_shortcuts), "device_name" (adapter alias),
+                       "discoverable" and "locked" (Scroll Lock)
                       {"cmd": "discover", "on": true}   look for unpaired phones and tablets
                       {"cmd": "pair", "address": ...}   pair one of them
                       {"cmd": "quit"}
@@ -129,6 +129,8 @@ class Control:
                 if key in OPTIONS:
                     name, convert = OPTIONS[key]
                     setattr(config, name, convert(value))
+            if "shortcuts" in msg:  # not in OPTIONS: it rebuilds HOTKEYS, TOGGLE and ACTIONS
+                log(f"shortcuts: {config.set_shortcuts(msg['shortcuts'])}")
             if msg.get("device_name"):
                 self.set_adapter("Alias", dbus.String(str(msg["device_name"])[:64]))
             if "discoverable" in msg:
@@ -150,7 +152,7 @@ class Control:
             self.calibrate(msg)
         elif cmd == "action":
             phone = self.fleet.phones.get(msg.get("address")) or self.bridge.phone
-            bit = ACTIONS.get(getattr(e, "KEY_" + str(msg["key"]).upper(), None))
+            bit = config.ACTIONS.get(getattr(e, "KEY_" + str(msg["key"]).upper(), None))
             if bit and phone.connected:
                 self.bridge.click_on(phone, bit)
                 log(f"GUI -> {phone.alias}: mouse button {bit.bit_length()}")

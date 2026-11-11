@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Pairing, forgetting and the AssistiveTouch guide."""
+"""Pairing, forgetting, the AssistiveTouch guide, and setting a shortcut."""
 
 import json
 
-from gi.repository import Adw, GLib, Gtk
+from evdev import ecodes as e
+from gi.repository import Adw, Gdk, GLib, Gtk
 
+from .config import SHORTCUTS, save_settings, shortcut_clash, shortcut_problem
+from .system import hyprland_binding
 from .widgets import crumbs, device_icon, dialog_shell, step_row
 
 
@@ -102,3 +105,97 @@ class DialogsMixin:
         dialog = dialog_shell(f"Set Up {kind}", 460, body)
         done.connect("clicked", lambda _b: dialog.close())
         dialog.present(self)
+
+    # --- shortcuts ---
+
+    def ask_shortcut(self, action):
+        """"Press the new shortcut": captures a combination for one of the shortcuts on the
+        Gestures page, warns when it clashes, and applies it on Set (Esc cancels)."""
+        title = SHORTCUTS[action][0]
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        body.append(Gtk.Label(label=f"Press the new shortcut for “{title}”, then click Set Shortcut. "
+                                    "Escape cancels.", xalign=0, wrap=True, css_classes=["dim-label"]))
+        self.captured = None
+        self.capture_preview = Adw.ShortcutLabel(accelerator=self.shortcut_accel(action),
+                                                 halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
+                                                 margin_top=16, margin_bottom=16, focusable=True)
+        body.append(self.capture_preview)
+        self.capture_banner = Adw.Banner()
+        body.append(self.capture_banner)
+        self.capture_reset = Gtk.Button(label="Reset to Default", css_classes=["flat"],
+                                        visible=bool(self.settings["shortcuts"].get(action)))
+        self.capture_reset.connect("clicked", self.on_shortcut_reset, action)
+        cancel = Gtk.Button(label="Cancel", css_classes=["flat"])
+        cancel.connect("clicked", lambda _b: self.capture_dialog.close())
+        okay = Gtk.Button(label="Set Shortcut", css_classes=["suggested-action"], sensitive=False)
+        okay.connect("clicked", self.on_shortcut_set, action)
+        buttons = Gtk.Box(spacing=12)
+        buttons.append(self.capture_reset)
+        spacer = Gtk.Box(hexpand=True)
+        buttons.append(spacer)
+        buttons.append(cancel)
+        buttons.append(okay)
+        body.append(buttons)
+        self.capture_dialog = dialog = dialog_shell("Set Shortcut", 440, body)
+        ctrl = Gtk.EventControllerKey()
+        body.add_controller(ctrl)
+        ctrl.connect("key-pressed", self.on_capture_key, action, okay)
+        dialog.connect("closed", self.on_capture_closed)
+        dialog.present(self)
+        self.capture_preview.grab_focus()
+
+    def on_capture_key(self, _ctrl, keyval, keycode, state, action, okay):
+        """A key while capturing: Esc cancels, a modifier only is waited on, anything else is the
+        new shortcut (previewed, with its clashes), until Set applies it."""
+        if keyval == Gdk.KEY_Escape:
+            self.capture_dialog.close()
+            return True
+        if not keycode or Gdk.keyval_is_modifier(keyval):
+            return True
+        mods = state & Gtk.accelerator_get_default_mod_mask()
+        key = keycode - 8  # evdev counts keys as the kernel does: the hardware code minus 8
+        if not 1 <= key <= e.KEY_MAX:
+            return True
+        names = [name for bit, name in ((Gdk.ModifierType.CONTROL_MASK, "ctrl"),
+                                        (Gdk.ModifierType.ALT_MASK, "alt"),
+                                        (Gdk.ModifierType.SHIFT_MASK, "shift"),
+                                        (Gdk.ModifierType.SUPER_MASK, "super")) if mods & bit]
+        self.captured = {"accel": Gtk.accelerator_name(keyval, mods), "mods": names, "key": key}
+        self.capture_preview.set_accelerator(self.captured["accel"])
+        problem = shortcut_problem(action, names, key)
+        if problem:
+            self.capture_banner.set_title(problem)
+            self.capture_banner.set_revealed(True)
+            okay.set_sensitive(False)
+            return True
+        warnings = []
+        clash = shortcut_clash(action, names, key, self.settings["shortcuts"])
+        if clash:
+            warnings.append(f"Also used by “{clash}”.")
+        if hyprland_binding(Gdk.keyval_name(keyval), names):
+            warnings.append("Also bound in Hyprland: it would happen there too.")
+        self.capture_banner.set_title(" ".join(warnings))
+        self.capture_banner.set_revealed(bool(warnings))
+        okay.set_sensitive(True)
+        return True
+
+    def on_shortcut_set(self, _button, action):
+        if not self.captured:
+            return
+        self.settings["shortcuts"][action] = self.captured
+        self.save_shortcuts(action)
+        self.capture_dialog.close()
+
+    def on_shortcut_reset(self, _button, action):
+        self.settings["shortcuts"].pop(action, None)
+        self.save_shortcuts(action)
+        self.capture_dialog.close()
+
+    def save_shortcuts(self, action):
+        """Save a shortcut change, send the bindings to the backend, refresh the page's label."""
+        save_settings(self.settings)
+        self.backend.send(cmd="set_options", shortcuts=self.settings["shortcuts"])
+        self.shortcut_labels[action].set_accelerator(self.shortcut_accel(action))
+
+    def on_capture_closed(self, _dialog):
+        self.capture_dialog = None

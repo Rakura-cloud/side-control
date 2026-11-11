@@ -82,6 +82,19 @@ def close_dialog(win):
         dialog.force_close()
 
 
+def scroll_to_bottom(win):
+    """The gestures page is taller than the window: scroll it down for its second shot."""
+    def walk(w):
+        yield w
+        for child in w:
+            yield from walk(child)
+    for w in walk(win.stack.get_visible_child()):
+        if isinstance(w, Gtk.ScrolledWindow):
+            adj = w.get_vadjustment()
+            adj.set_value(adj.get_upper() - adj.get_page_size())
+            return
+
+
 def script(win):
     steps = []
     for i, (name, *_rest) in enumerate(PAGES):
@@ -90,6 +103,10 @@ def script(win):
               lambda: win.show_guide("AA:00:00:00:00:01"), lambda: shot(win, "guide"), lambda: close_dialog(win),
               lambda: win.ask_forget("AA:00:00:00:00:02"), lambda: shot(win, "forget"), lambda: close_dialog(win),
               lambda: win.show_pair(), lambda: shot(win, "pair"), lambda: close_dialog(win),
+              lambda: win.show_page(2),
+              lambda: scroll_to_bottom(win), lambda: shot(win, "gesture-actions"),
+              lambda: win.ask_shortcut("toggle_sharing"), lambda: shot(win, "shortcut"),
+              lambda: close_dialog(win),
               lambda: print("sent to the backend:", *received, sep="\n  "),
               lambda: win.get_application().quit()]
 

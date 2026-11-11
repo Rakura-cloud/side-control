@@ -29,9 +29,11 @@ the phone or tablet: it sees an ordinary Bluetooth keyboard and mouse.
   two-finger left/right swipes that turn the page (Photos, the Home Screen, ...).
 - **Gestures.** On a device, three-finger swipe up goes Home and left/right opens the App Switcher. On
   the computer, three-finger swipes are left to your desktop (workspaces); `THREE_FINGER_FROM_PC` in
-  `backend/config.py` makes left/right jump to the next device there.
+  `backend/config.py` makes left/right jump to the next device there. What each gesture does — and how
+  far a two-finger swipe drags — is set on the Gestures & Keybindings page.
 - **Keyboard shortcuts.** Send the cursor to the next device or back, lock it to the current screen,
-  turn sharing on and off.
+  turn sharing on and off. Every shortcut can be changed on the Gestures & Keybindings page, which
+  warns when a combination clashes with another one or with the compositor's bindings.
 - **Edge indicator.** A line on your screen edge shows where each device is reached. Choose its style (Subtle, Standard, Bold, Glow) and colour.
 - **Cursor out of the way.** While a device has control, the computer's cursor is hidden (Hyprland); it
   comes back where you return. Turn it off in Appearance.
@@ -167,8 +169,9 @@ Mouse Scrolling** turns them the other way), and its back / forward buttons are 
   tells where its pointer is. Side Control keeps its own estimate using each model's screen size, and
   re-anchors it whenever the pointer is pushed against an edge. iOS pointer acceleration can still make
   it drift, so the cursor may come back to the computer a little early or late.
-- **Swipes and pinches are imitated.** A mouse cannot swipe or pinch on iOS, so a swipe is a short,
-  quick drag (one page per swipe; apps that need a longer swipe may not react) and pinching uses the
+- **Swipes and pinches are imitated.** A mouse cannot swipe or pinch on iOS, so a swipe is a quick
+  drag (one page per swipe; apps that need a longer one may not react) whose length the **Swipe
+  Length** setting chooses (short, medium or long; "long" for apps like Instagram), and pinching uses the
   Accessibility Zoom shortcuts.
 - **Share Clipboard** is a saved setting only: a Bluetooth keyboard and mouse cannot carry a clipboard.
 - **Shake to Locate** enlarges the computer's cursor (Hyprland only); the device's pointer is not
