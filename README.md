@@ -143,21 +143,26 @@ What works on each desktop:
 |---|---|---|---|---|
 | Switching by shortcut, gesture or from the app | yes | yes | yes | yes |
 | Monitors (the hand-off geometry) | yes | yes | yes | yes |
-| Edge hand-off (push the cursor off the edge) | yes | no | no | no |
-| The cursor comes back at the edge | yes | no | no | no |
+| Edge hand-off (push the cursor off the edge) | yes | no | yes (with the KWin script), untested | yes (with the extension), untested |
+| The cursor comes back at the edge | yes | no | no³ | yes (with the extension), untested |
 | PC pointer hidden while a device has control | yes | no | no | no |
 | Edge indicator (follows the cursor) | yes | edges only¹ | edges only¹ | no² |
 | Shake to Locate (enlarges the cursor) | yes | no | no | no |
 
 Hyprland is the only compositor that says where the cursor is and moves it on request (its IPC
-socket). niri's IPC has no pointer position and no way to move the pointer, and KDE and GNOME would
-need a KWin script or a GNOME Shell extension for either, so there you switch with the shortcuts or
-from the app instead of by pushing the cursor off an edge. The monitor layout comes from each
-compositor (Hyprland's IPC, niri's IPC, `kscreen-doctor -j` on KDE, Mutter's
-`org.gnome.Mutter.DisplayConfig` on GNOME).
+socket). niri's IPC has no pointer position and no way to move the pointer. KDE and GNOME keep both
+to themselves on Wayland, so Side Control ships what each needs: the backend loads a **KWin script**
+([`side-control-cursor.js`](side_control/data/kwin/side-control-cursor.js)) that reports the cursor
+position (KWin cannot move the pointer at all, see below), and a **GNOME Shell extension**
+([`side-control@sidecontrol.github.io`](side_control/data/gnome-shell/side-control@sidecontrol.github.io/)),
+installed from **Settings → GNOME Shell Extension**, reports the position and moves the pointer. The
+monitor layout comes from each compositor (Hyprland's IPC, niri's IPC, `kscreen-doctor -j` on KDE,
+Mutter's `org.gnome.Mutter.DisplayConfig` on GNOME).
 
 ¹ The indicator draws the edges, but "Near" mode needs the cursor position to follow it. ² It also
-needs gtk4-layer-shell, which GNOME does not have.
+needs gtk4-layer-shell, which GNOME does not have. ³ KWin cannot move the pointer
+(`workspace.cursorPos` is read-only and its D-Bus has no pointer method), so the Super+Esc shortcut
+brings the cursor back instead.
 
 Verified on Hyprland only so far. The niri, KDE and GNOME code paths are tested against fake replies
 of their documented interfaces, but have not been run on those desktops yet.

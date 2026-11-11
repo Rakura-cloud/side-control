@@ -8,6 +8,7 @@ from gi.repository import Adw, Gdk, Gtk
 from .arrangement import ArrangementView
 from .. import VERSION
 from .config import AUTOSTART_PATH, INDICATOR_STYLES, ISSUES_URL, save_settings, set_autostart
+from .system import install_gnome_extension
 
 
 SHORTCUTS = [("Toggle Cursor Sharing", "<Super><Shift>s"), ("Send Cursor to Next Device", "<Super>Right"),
@@ -191,6 +192,17 @@ class PagesMixin:
         general.add(self.login_row)
         general.add(self.switch_row("run_in_background", "Run in Background",
                                     "Keep devices connected when the window is closed"))
+        if "gnome" in os.environ.get("XDG_CURRENT_DESKTOP", "").lower():
+            gnome_row = Adw.ActionRow(
+                title="GNOME Shell Extension",
+                subtitle="Gives Side Control the pointer position and warp, so edge hand-off works. "
+                         "On Wayland it only loads after logging out and back in",
+                activatable=True)
+            install = Gtk.Button(label="Install", valign=Gtk.Align.CENTER)
+            install.connect("clicked", self.on_gnome_extension)
+            gnome_row.add_suffix(install)
+            gnome_row.set_activatable_widget(install)
+            general.add(gnome_row)
         page.add(general)
 
         bluetooth = Adw.PreferencesGroup(title="Bluetooth")
@@ -274,6 +286,14 @@ class PagesMixin:
             set_autostart(row.get_active())
         except OSError as err:
             self.toasts.add_toast(Adw.Toast(title=f"Could not change autostart: {err.strerror}"))
+
+    def on_gnome_extension(self, _row):
+        try:
+            install_gnome_extension()
+        except OSError as err:
+            self.toasts.add_toast(Adw.Toast(title=f"Could not install the GNOME Shell extension: {err.strerror or err}"[:160]))
+        else:
+            self.toasts.add_toast(Adw.Toast(title="GNOME Shell extension installed - log out and back in to load it"))
 
     def on_report(self, _row):
         if ISSUES_URL:

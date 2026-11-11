@@ -10,7 +10,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import side_control.app  # noqa: E402,F401  (picks the GTK versions)
 from side_control.app import system  # noqa: E402
-from side_control.app.config import NO_INPUT_CONF, SERVICE_RULES, SERVICE_UNIT  # noqa: E402
+from side_control.app.config import GNOME_EXTENSION, NO_INPUT_CONF, SERVICE_RULES, SERVICE_UNIT  # noqa: E402
 
 
 class InstallFile(unittest.TestCase):
@@ -39,6 +39,41 @@ class Installed(unittest.TestCase):
                 with open(path, "a") as out:
                     out.write("# an older version\n")
                 self.assertFalse(system.service_installed())
+
+
+class GnomeExtension(unittest.TestCase):
+    """install_gnome_extension: the GNOME Shell extension copied into the user's extensions
+    directory and enabled, no root; the tests use a temporary HOME and a mocked gnome-extensions."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patch = mock.patch.dict(os.environ, {"HOME": self.tmp.name}, clear=True)
+        patch.start()
+        self.addCleanup(patch.stop)
+        run = mock.patch.object(system.subprocess, "run")
+        self.run = run.start()
+        self.addCleanup(run.stop)
+        self.run.return_value = mock.Mock(returncode=0, stderr="")
+
+    def ext(self):
+        return os.path.join(self.tmp.name, ".local", "share", "gnome-shell", "extensions",
+                            os.path.basename(GNOME_EXTENSION))
+
+    def test_copied_and_enabled(self):
+        system.install_gnome_extension()
+        for name in ("extension.js", "metadata.json"):
+            with open(os.path.join(self.ext(), name)) as f:
+                self.assertTrue(f.read())
+        self.run.assert_called_once_with(
+            ["gnome-extensions", "enable", os.path.basename(GNOME_EXTENSION)],
+            capture_output=True, text=True, timeout=10)
+
+    def test_an_extension_that_will_not_enable_says_why(self):
+        self.run.return_value = mock.Mock(returncode=1, stderr="no such extension")
+        with self.assertRaises(OSError) as caught:
+            system.install_gnome_extension()
+        self.assertIn("no such extension", caught.exception.strerror)
 
 
 class CompositorExports(unittest.TestCase):

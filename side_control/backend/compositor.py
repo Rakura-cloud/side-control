@@ -4,6 +4,7 @@
 detect() picks the implementation for the session from HYPRLAND_INSTANCE_SIGNATURE, NIRI_SOCKET and
 XDG_CURRENT_DESKTOP, which the app exports into the command the backend's service runs."""
 
+import atexit
 import glob
 import json
 import os
@@ -12,8 +13,19 @@ import subprocess
 import time
 
 import dbus
+import dbus.service
 
 from .config import CURSOR_MARK, RUNTIME_DIR
+
+
+CURSOR_SERVICE = "io.github.sidecontrol.Cursor"  # the KWin script's D-Bus target, served here
+CURSOR_PATH = "/io/github/sidecontrol/Cursor"
+CURSOR_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "data", "kwin", "side-control-cursor.js")  # shipped with the backend
+SCRIPT_PLUGIN = "side-control-cursor"  # the script's plugin name for KWin's loadScript/unloadScript
+SHELL_SERVICE = "io.github.sidecontrol.Shell"  # the GNOME Shell extension's D-Bus service
+SHELL_PATH = "/io/github/sidecontrol/Shell"
+SHELL_TIMEOUT_S = 0.25  # cursor() runs on every touchpad report: a stuck Shell must not stall input
 
 
 class Compositor:
@@ -29,11 +41,17 @@ class Compositor:
       cannot be told to move the pointer.
     - hide_cursor(hide): hide the pointer on every monitor (hide=True), or show the one that was
       hidden here again. A no-op where it cannot be done.
-    - available: whether the PC pointer can be located and moved right now.
+    - start(): set up what this compositor needs before the first cursor() (KWin loads its cursor
+      script); undone again at exit.
+    - available: whether the PC pointer can be located right now - edge hand-off needs no more,
+      moving it back is warp()'s job.
 
     detect() below returns the subclass for the running desktop."""
 
     name = "an unknown compositor"
+
+    def start(self):
+        pass
 
     @property
     def available(self):
@@ -209,14 +227,47 @@ class Mutter(Compositor):
     """GNOME's Mutter, over D-Bus.
 
     GetCurrentState (org.gnome.Mutter.DisplayConfig) reports the logical monitors, which is the
-    layout. The pointer position and moving it have no public API (a GNOME Shell extension would be
-    needed), so cursor() stays None and warp() does not move anything."""
+    layout. The pointer position and moving it have no public API - Wayland leaves both to the
+    shell - so both go through the Side Control GNOME Shell extension
+    (data/gnome-shell/side-control@sidecontrol.github.io/), which serves io.github.sidecontrol.Shell
+    on the session bus: GetCursor (global.get_pointer) and Warp (Clutter's seat warp, which injects
+    absolute motion and so works on Wayland). Installing it is the user's choice (the app's
+    settings); without it cursor() stays None and warp() does not move anything."""
 
     name = "GNOME (Mutter)"
 
     def __init__(self):
         self.rects = None
         self.rects_t = 0.0
+
+    def shell(self, method):
+        """One method of the GNOME Shell extension's D-Bus object. get_object is lazy, so the
+        absence of the extension only shows when the method is called: the callers catch that."""
+        try:
+            bus = dbus.SessionBus()
+            return bus.get_object(SHELL_SERVICE, SHELL_PATH).get_dbus_method(method, SHELL_SERVICE)
+        except dbus.DBusException:
+            return None
+
+    def cursor(self):
+        """(x, y) of the PC pointer from the extension; None when it is not running."""
+        try:
+            x, y = self.shell("GetCursor")(timeout=SHELL_TIMEOUT_S)
+            return int(x), int(y)
+        except (dbus.DBusException, TypeError, ValueError):
+            return None
+
+    def warp(self, x, y):
+        """Move the PC pointer through the extension; False when it is not running."""
+        try:
+            self.shell("Warp")(int(round(x)), int(round(y)), timeout=SHELL_TIMEOUT_S)
+            return True
+        except (dbus.DBusException, TypeError):
+            return False
+
+    @property
+    def available(self):
+        return self.cursor() is not None  # the extension answers
 
     def state(self):
         """Mutter's GetCurrentState reply, or None if its D-Bus is not there."""
@@ -260,18 +311,98 @@ class Mutter(Compositor):
             return None
 
 
-class KWin(Compositor):
-    """KDE's KWin, through kscreen-doctor.
+class CursorReceiver(dbus.service.Object):
+    """The session-bus service the KWin script reports the pointer position to. Wayland gives
+    clients no pointer position, so the script pushes every change here."""
 
-    `kscreen-doctor -j` prints libkscreen's view of the output configuration: every output's
-    position and size. The pointer position and moving it have no public API (a KWin script would
-    be needed), so cursor() stays None and warp() does not move anything."""
+    def __init__(self, comp, bus):
+        super().__init__(bus, CURSOR_PATH)
+        self.comp = comp
+
+    @dbus.service.method(CURSOR_SERVICE, in_signature="ss", out_signature="")
+    def Report(self, x, y):
+        try:
+            self.comp.report(float(x), float(y))
+        except ValueError:
+            pass
+
+
+class KWin(Compositor):
+    """KDE's KWin.
+
+    layout(): `kscreen-doctor -j` prints libkscreen's view of the output configuration: every
+    output's position and size.
+
+    cursor(): a KWin script (data/kwin/side-control-cursor.js), loaded over D-Bus at start(),
+    reports workspace.cursorPos to this backend's session-bus service whenever it changes;
+    cursor() is the last report. Wayland gives clients no pointer position, and KWin shows it to
+    scripts only.
+
+    warp(): KWin cannot move the pointer. workspace.cursorPos is read-only (KWin 5 and 6 alike,
+    scripting/workspace_wrapper.h), KWin's D-Bus (org.kde.KWin at /KWin, src/dbusinterface.h) has
+    no pointer method, and Cursor::setPos is internal C++; only the RemoteDesktop portal moves the
+    pointer, relatively and behind a permission dialog. So warp() does not move anything and
+    hand-off's leave() keeps the "control returned" log."""
 
     name = "KDE (KWin)"
 
     def __init__(self):
         self.rects = None
         self.rects_t = 0.0
+        self.pos = None  # the last position the script reported
+        self.script = None  # the loaded script's id, None while it is not loaded
+
+    def start(self):
+        """Serve the script's reports and load the cursor script into KWin; unloaded at exit."""
+        try:
+            self.bus = dbus.SessionBus()
+            self.bus_name = dbus.service.BusName(CURSOR_SERVICE, self.bus)  # what the script reports to
+            self.reports = CursorReceiver(self, self.bus)
+            self.script = self.load_script()
+        except dbus.DBusException:
+            self.script = None
+        if self.script is not None:
+            atexit.register(self.unload_script)
+
+    def load_script(self):
+        """Load the cursor script into KWin and start it, as its script id; None when KWin is not
+        there or would not take it. KWin 6 runs the script object at /Scripting/Script<id>, KWin 5
+        at /<id> (scripting/scripting.cpp)."""
+        self.unload_script()  # one left by a backend that was killed: KWin would refuse the name
+        try:
+            scripting = self.bus.get_object("org.kde.KWin", "/Scripting")
+            load = scripting.get_dbus_method("loadScript", "org.kde.kwin.Scripting")
+            script = load(CURSOR_SCRIPT, SCRIPT_PLUGIN)
+        except dbus.DBusException:
+            return None
+        for path in (f"/Scripting/Script{script}", f"/{script}"):
+            try:
+                self.bus.get_object("org.kde.KWin", path).get_dbus_method("run", "org.kde.kwin.Script")()
+                return script
+            except dbus.DBusException:
+                pass
+        self.unload_script()  # loaded, but it would not run
+        return None
+
+    def unload_script(self):
+        """Take the cursor script out of KWin again."""
+        try:
+            scripting = self.bus.get_object("org.kde.KWin", "/Scripting")
+            scripting.get_dbus_method("unloadScript", "org.kde.kwin.Scripting")(SCRIPT_PLUGIN)
+        except dbus.DBusException:
+            pass
+
+    def report(self, x, y):
+        """Where the script says the pointer is (strings in, as the script sends them: callDBus
+        marshals JS numbers as int or double depending on the KWin version)."""
+        self.pos = (round(x), round(y))
+
+    def cursor(self):
+        return self.pos
+
+    @property
+    def available(self):
+        return self.script is not None  # the reports flow once the script is loaded
 
     def doctor(self):
         """kscreen-doctor -j's configuration as a dict, or None if the tool is not there."""

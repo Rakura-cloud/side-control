@@ -1,0 +1,6 @@
+{
+  "uuid": "side-control@sidecontrol.github.io",
+  "name": "Side Control",
+  "description": "Gives Side Control the pointer position and pointer warp on Wayland, so edge hand-off works. Installed from Side Control's settings; on Wayland it only loads after logging out and back in.",
+  "shell-version": ["45", "46", "47", "48", "49"]
+}

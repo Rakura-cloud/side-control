@@ -65,6 +65,7 @@ def main():
     proximity.start()
     bridge.proximity = proximity
     compositor = detect()
+    compositor.start()  # brings up what it needs (KWin loads its cursor script)
     log(f"compositor: {compositor.name}")
     if not compositor.available:
         log(f"no pointer position or warp from {compositor.name}: edge hand-off and hiding the PC "
