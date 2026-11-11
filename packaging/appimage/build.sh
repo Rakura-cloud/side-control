@@ -3,14 +3,43 @@
 # Build dist/Side_Control-<version>-<arch>.AppImage with quick-sharun (Anylinux AppImages). It bundles
 # everything down to glibc, so the AppImage runs on any distribution. Build on Arch Linux with the
 # dependencies from the README installed; no root needed.
+#
+# CHANNEL=stable (the default) builds a release, version VERSION from side_control/__init__.py.
+# CHANNEL=dev builds for the dev pre-release, version VERSION-dev.<short commit>; COMMIT gives the
+# commit (the workflow passes it, so git isn't needed there), else it is the checkout's HEAD.
+# In GitHub Actions the AppImage gets update information for its channel's release, from
+# GITHUB_REPOSITORY; a local build gets none.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 BUILD=$ROOT/build/appimage
+CHANNEL=${CHANNEL:-stable}
 VERSION=$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' "$ROOT/side_control/__init__.py")
 ARCH=$(uname -m)
 QUICK_SHARUN=https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/bacfcc005398d74e6454cdb8f494efe42e0bb60a/useful-tools/quick-sharun.sh
 
+# the zsync patterns: GitHub's "latest" is never a pre-release, so a stable AppImage only updates to
+# stable releases, and a dev one only to the dev pre-release
+case $CHANNEL in
+    stable)
+        RELEASE=latest ZSYNC="*-$ARCH.AppImage.zsync"
+        ;;
+    dev)
+        COMMIT=${COMMIT:-$(git -C "$ROOT" rev-parse HEAD)}
+        VERSION=$VERSION-dev.$(printf %s "$COMMIT" | cut -c1-7)
+        RELEASE=dev ZSYNC="*-dev.*-$ARCH.AppImage.zsync"
+        ;;
+    *)
+        echo "CHANNEL must be stable or dev, not $CHANNEL" >&2
+        exit 1
+        ;;
+esac
+
+# appimagetool writes VERSION into the desktop entry (X-AppImage-Version) and UPINFO into the AppImage
+export VERSION
+if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+    export UPINFO="gh-releases-zsync|${GITHUB_REPOSITORY%/*}|${GITHUB_REPOSITORY#*/}|$RELEASE|$ZSYNC"
+fi
 export APPDIR=$BUILD/AppDir
 export OUTPATH=$ROOT/dist
 export OUTNAME=Side_Control-$VERSION-$ARCH.AppImage
@@ -29,6 +58,7 @@ chmod +x quick-sharun
 # the app; AppRun starts bin/<name> when the AppImage is run with that name as its first argument
 cp -r "$ROOT/side_control" "$ROOT/side-control" "$ROOT/side-control-backend" "$APPDIR/share/side-control/"
 find "$APPDIR/share/side-control" -name __pycache__ -prune -exec rm -rf {} +
+echo "$VERSION" > "$APPDIR/share/side-control/side_control/version"  # read by side_control/__init__.py
 for name in side-control side-control-backend; do
     printf '#!/bin/sh\nexec "$APPDIR/bin/python3" "$APPDIR/share/side-control/%s" "$@"\n' "$name" \
         > "$APPDIR/bin/$name"

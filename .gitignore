@@ -7,3 +7,6 @@ __pycache__/
 build/
 dist/
 *.AppImage
+
+# written into the AppImage by build.sh; never in a checkout
+side_control/version

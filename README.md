@@ -58,6 +58,17 @@ chmod +x Side_Control-*-x86_64.AppImage
 It bundles Python, GTK and everything else it needs, so it runs on any x86_64 distribution. Your system
 still needs what Side Control talks to: BlueZ, polkit, and Hyprland for edge hand-off (see below).
 
+#### Dev build
+
+To try fixes before they are released, download `Side_Control-<version>-dev.<commit>-x86_64.AppImage`
+from the [dev pre-release](https://github.com/Rakura-cloud/side-control/releases/tag/dev), rebuilt on
+every change to the `dev` branch. Settings shows which commit it is.
+
+> **Warning:** dev builds are untested between releases and can break, including the input takeover
+> (<kbd>Super</kbd>+<kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd> bring control back).
+> Use the [latest release](https://github.com/Rakura-cloud/side-control/releases/latest) for everyday
+> use.
+
 ### From source
 
 Install the [requirements](#requirements), then:
