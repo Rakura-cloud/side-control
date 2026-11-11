@@ -94,6 +94,21 @@ Then, for each device:
    button.
 3. In Side Control's **Layout** page, drag the device to the side of your screen where it sits.
 
+### AssistiveTouch on iPhone and iPad
+
+An iPhone only shows the pointer with **AssistiveTouch** on: **Settings → Accessibility → Touch →
+AssistiveTouch**. Turning off **Always Show Menu** hides its floating button and keeps the cursor. An
+iPad has its own pointer and needs none of this; AssistiveTouch is only for the extra mouse buttons.
+
+Those buttons are <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>H</kbd> / <kbd>C</kbd> / <kbd>N</kbd> /
+<kbd>S</kbd> (mouse buttons 4–7). Assign them under **AssistiveTouch → Devices → (this computer) →
+Customize Additional Buttons**: when iOS asks for a button, press its shortcut in Side Control's setup
+guide (the help button on the device row), then choose the action for it. The same guide
+covers pinch zoom, which needs **Accessibility → Zoom** with **Keyboard Shortcuts** on.
+
+iOS gives no way to check whether AssistiveTouch is on, so Side Control cannot verify it: the guide
+walks through the settings but cannot tell whether they are done.
+
 ### Bluetooth mice and keyboards on the computer
 
 The two Bluetooth channels a keyboard or mouse uses can only be held by one program, either Linux's

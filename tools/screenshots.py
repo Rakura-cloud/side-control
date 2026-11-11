@@ -87,7 +87,10 @@ def script(win):
     for i, (name, *_rest) in enumerate(PAGES):
         steps += [lambda i=i: win.show_page(i), lambda name=name: shot(win, name.lower())]
     steps += [lambda: win.show_page(0),
-              lambda: win.show_guide("AA:00:00:00:00:01"), lambda: shot(win, "guide"), lambda: close_dialog(win),
+              lambda: win.show_guide("AA:00:00:00:00:01"), lambda: shot(win, "guide-iphone"),
+              lambda: win.press_button("AA:00:00:00:00:01", "h"), lambda: close_dialog(win),
+              lambda: win.show_guide("AA:00:00:00:00:02"), lambda: shot(win, "guide-ipad"),
+              lambda: close_dialog(win),
               lambda: win.ask_forget("AA:00:00:00:00:02"), lambda: shot(win, "forget"), lambda: close_dialog(win),
               lambda: win.show_pair(), lambda: shot(win, "pair"), lambda: close_dialog(win),
               lambda: print("sent to the backend:", *received, sep="\n  "),

@@ -87,18 +87,53 @@ class DialogsMixin:
 
     def show_guide(self, address):
         dev = self.devs.get(address, {})
-        kind = "iPad" if dev.get("form") == "tablet" else "iPhone"
+        ipad = dev.get("form") == "tablet" or dev.get("os") == "iPadOS"  # unknown: the iPhone guide
+        kind = "iPad" if ipad else "iPhone"
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        body.append(Gtk.Label(label="iPhone and iPad only show a cursor when AssistiveTouch is on. "
-                                    "Do this once on the device:", xalign=0, wrap=True, css_classes=["dim-label"]))
+        if ipad:
+            intro = ("iPadOS has its own pointer, so an iPad works without AssistiveTouch. These settings are "
+                     "optional; the extra buttons need AssistiveTouch on.")
+        else:
+            intro = "An iPhone shows a cursor only when AssistiveTouch is on. Do this once on the iPhone."
+        body.append(Gtk.Label(label=f"{intro} iOS gives no way to check whether AssistiveTouch is on, so this "
+                                    "guide can't verify it.", xalign=0, wrap=True,
+                              css_classes=["dim-label"]))
         steps = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
-        steps.append(step_row(1, "Open Settings and go to", extra=crumbs("Accessibility", "Touch", "AssistiveTouch")))
-        steps.append(step_row(2, "Turn on AssistiveTouch", "A round cursor appears on the screen"))
-        steps.append(step_row(3, "Optional: turn off Always Show Menu",
-                              "Hides the floating button while keeping the cursor"))
+        number = 1
+        if not ipad:
+            steps.append(step_row(number, "Open Settings and go to",
+                                  extra=crumbs("Accessibility", "Touch", "AssistiveTouch")))
+            number += 1
+            steps.append(step_row(number, "Turn on AssistiveTouch",
+                                  "A round cursor appears on the screen. Optional: turn off Always Show Menu "
+                                  "to hide the floating button"))
+            number += 1
+        buttons = Adw.WrapBox(child_spacing=8, line_spacing=8)
+        for key, button in (("h", 4), ("c", 5), ("n", 6), ("s", 7)):
+            shortcut = Gtk.Button(label=f"Ctrl+Alt+{key.upper()}", tooltip_text=f"Mouse button {button}")
+            shortcut.connect("clicked", lambda _b, k=key: self.press_button(address, k))
+            buttons.append(shortcut)
+        extra = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        extra.append(crumbs("AssistiveTouch", "Devices", "(this computer)", "Customize Additional Buttons"))
+        extra.append(buttons)
+        steps.append(step_row(number, "Optional: add the extra mouse buttons",
+                              "When iOS asks for a button, press a shortcut here, then choose its action (mouse buttons 4–7):",
+                              extra=extra))
+        number += 1
+        steps.append(step_row(number, "Optional: turn on pinch zoom",
+                              "Turn on Zoom and Keyboard Shortcuts; a two-finger pinch then zooms",
+                              extra=crumbs("Accessibility", "Zoom")))
         body.append(steps)
         done = Gtk.Button(label="Done", css_classes=["suggested-action"], halign=Gtk.Align.END)
         body.append(done)
         dialog = dialog_shell(f"Set Up {kind}", 460, body)
         done.connect("clicked", lambda _b: dialog.close())
         dialog.present(self)
+
+    def press_button(self, address, key):
+        """The guide's extra-button step: press a mouse button on the device while iOS waits for one."""
+        dev = self.devs.get(address, {})
+        if not dev.get("connected"):
+            self.toasts.add_toast(Adw.Toast(title=f"Connect {dev.get('name', 'the device')} first"))
+            return
+        self.backend.send(cmd="action", address=address, key=key)
