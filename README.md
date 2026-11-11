@@ -119,6 +119,7 @@ Needed by the AppImage too:
   installs that service once through `pkexec` (see [Permissions](#permissions)).
 - **Hyprland** for edge hand-off: Side Control asks it where the cursor is. On other compositors
   everything else works, and you switch with the shortcuts instead.
+- **wl-clipboard** (optional, `wl-paste`): Share Clipboard reads the computer's clipboard with it.
 
 Bundled in the AppImage, needed when running from source:
 
@@ -170,7 +171,13 @@ Mouse Scrolling** turns them the other way), and its back / forward buttons are 
 - **Swipes and pinches are imitated.** A mouse cannot swipe or pinch on iOS, so a swipe is a short,
   quick drag (one page per swipe; apps that need a longer swipe may not react) and pinching uses the
   Accessibility Zoom shortcuts.
-- **Share Clipboard** is a saved setting only: a Bluetooth keyboard and mouse cannot carry a clipboard.
+- **Share Clipboard is text only, computer to device.** While a device has the cursor,
+  <kbd>Ctrl</kbd>+<kbd>V</kbd> or <kbd>Super</kbd>+<kbd>V</kbd> types the computer's clipboard into
+  the text field in focus on the device, on the US layout (emoji and most accented letters are
+  skipped). The device's clipboard never comes back. It needs
+  [wl-clipboard](https://github.com/bugaevc/wl-clipboard) (`wl-paste`, recommended) to read the
+  clipboard without focus; without it the GTK reader is used, which on GNOME may only work while the
+  Side Control window is focused.
 - **Shake to Locate** enlarges the computer's cursor (Hyprland only); the device's pointer is not
   affected.
 - Shortcuts reach your compositor too, since the keyboard is only taken over while a device has the

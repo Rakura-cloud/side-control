@@ -53,8 +53,8 @@ DEFAULTS = {"share_cursor": True, "share_clipboard": True, "switch_delay_ms": 15
 INDICATOR_STYLES = {"Subtle": ("solid", 2, 60), "Standard": ("solid", 4, 100), "Bold": ("solid", 8, 100),
                     "Glow": ("glow", 6, 90)}
 DEVICE_DEFAULTS = {"enabled": True, "edge": None, "x": None, "y": None}
-BACKEND_OPTIONS = ("share_cursor", "switch_delay_ms", "three_finger_switch", "shake_to_locate", "tap_to_click",
-                   "mouse_natural_scroll", "hide_cursor")
+BACKEND_OPTIONS = ("share_cursor", "share_clipboard", "switch_delay_ms", "three_finger_switch",
+                   "shake_to_locate", "tap_to_click", "mouse_natural_scroll", "hide_cursor")
 
 
 

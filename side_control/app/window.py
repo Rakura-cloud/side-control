@@ -9,6 +9,7 @@ from gi.repository import Adw, GLib, Gdk, Gio, Gtk
 from .backend_link import Backend
 from .bluetooth import BluetoothMixin
 from .. import VERSION
+from .clipboard import send_clipboard
 from .config import (
     APP_ICON,
     BACKEND_OPTIONS,
@@ -199,6 +200,8 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
             self.enlarge_cursor()
         elif kind == "open":
             self.present()
+        elif kind == "paste":
+            send_clipboard(self.backend)
 
     def on_state(self, st):
         self.target = st["target"]

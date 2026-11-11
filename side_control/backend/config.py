@@ -24,6 +24,8 @@ MOD_KEYS = {e.KEY_LEFTMETA: "super", e.KEY_RIGHTMETA: "super", e.KEY_LEFTSHIFT: 
             e.KEY_RIGHTSHIFT: "shift", e.KEY_LEFTALT: "alt", e.KEY_RIGHTALT: "alt",
             e.KEY_LEFTCTRL: "ctrl", e.KEY_RIGHTCTRL: "ctrl"}
 SHARE_CURSOR = True   # edge hand-off on (Super+Shift+S / the GUI toggles it)
+SHARE_CLIPBOARD = True  # Ctrl+V / Super+V on a device types the computer's clipboard into the text
+                        # field in focus there (text only, computer to device only)
 THREE_FINGER_SWITCH = True  # three-finger swipe left/right: the device's App Switcher (SWIPE_SIDE_BUTTON)
 # ...and while the PC has control, the previous / next device. Off: compositors use three-finger swipes
 # for workspaces (Hyprland, GNOME, KDE), and the PC's touchpad is not grabbed, so one swipe would do both
@@ -84,6 +86,14 @@ DIAL_ONLY = False     # set when bluetoothd's input plugin holds the HID channel
 DIAL_ONLY_MAX_S = 30  # to us then, so keep dialing them more often
 MOUSE_INTERVAL = 0.008  # min seconds between motion reports; motion in between is merged
 INPUT_RESCAN_S = 1.0    # seconds between looks for new input devices (a Bluetooth mouse waking up)
+# Share Clipboard: the GUI reads the clipboard (this process runs without a Wayland session and cannot)
+# and sends it back as type_text, typed on the device in control over the HID keyboard
+PASTE_KEY = e.KEY_V
+PASTE_MODS = ({"ctrl"}, {"super"})  # the chords that ask for the clipboard while a device has control
+TYPE_DELAY_S = 0.02   # between typed characters: quick enough to paste in seconds, slow enough that iOS
+                      # does not drop keys arriving over Bluetooth
+TYPE_MAX = 4000       # characters of a clipboard text typed; longer is cut and logged: a HID keyboard
+                      # is a slow way to move text, and minutes of typing lose keys
 
 # Continuity-style hand-off between the PC pointer and the phone's pointer
 HANDOFF_ZONES = ("top-left", "top", "top-right", "left", "right", "bottom-left", "bottom", "bottom-right")
@@ -128,7 +138,8 @@ SOCK_PATH = os.environ.get("SIDE_CONTROL_SOCK", os.path.join(RUNTIME_DIR, "side-
 # set_options from the GUI: option -> (global it sets, type)
 OPTIONS = {"natural_scroll": ("NATURAL_SCROLL", bool), "mouse_natural_scroll": ("MOUSE_NATURAL_SCROLL", bool),
            "tap_to_click": ("TAP_TO_CLICK", bool),
-           "share_cursor": ("SHARE_CURSOR", bool), "three_finger_switch": ("THREE_FINGER_SWITCH", bool),
+           "share_cursor": ("SHARE_CURSOR", bool), "share_clipboard": ("SHARE_CLIPBOARD", bool),
+           "three_finger_switch": ("THREE_FINGER_SWITCH", bool),
            "shake_to_locate": ("SHAKE_TO_LOCATE", bool), "hide_cursor": ("HIDE_CURSOR", bool),
            "swipe_flick": ("SWIPE_FLICK", bool), "swipe_up_home": ("SWIPE_UP_HOME", bool),
            "switch_delay_ms": ("SWITCH_DELAY_S", lambda ms: max(0.0, min(2.0, float(ms) / 1000)))}

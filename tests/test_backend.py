@@ -14,7 +14,7 @@ from side_control.backend import config  # noqa: E402
 from side_control.backend.bridge import Bridge  # noqa: E402
 from side_control.backend.devices import SCREEN_POINTS, Phone  # noqa: E402
 from side_control.backend.handoff import Handoff, handoff_exits  # noqa: E402
-from side_control.backend.hid import REPORT_MAP  # noqa: E402
+from side_control.backend.hid import KEYMAP, REPORT_MAP, TYPEMAP, type_keys  # noqa: E402
 from side_control.backend import inputs  # noqa: E402
 from side_control.backend.bluez import form_of  # noqa: E402
 from side_control.backend.compositor import Hyprland  # noqa: E402
@@ -126,6 +126,7 @@ def make_mouse_bridge(on_phone=True):
     mouse = FakeMouse()
     bridge.on_phone, bridge.fleet, bridge.devices = on_phone, FakeFleet(), {7: mouse}
     bridge.held, bridge.toggle_pending, bridge.action_pending = set(), False, None
+    bridge.paste_held = False
     bridge.rel, bridge.rel_t, bridge.accels = [0, 0], 0.0, {}
     return bridge, phone, mouse
 
@@ -554,6 +555,132 @@ class SwipeFlick(unittest.TestCase):
         self.swipe(bridge, make_touchpad(), 20)  # towards the right edge, 13 counts away
         need = config.FLICK_ROOM * config.FLICK_STEP * config.FLICK_REPORTS
         self.assertGreaterEqual(393 - h.vx, need - 1)
+
+
+class TypeKeys(unittest.TestCase):
+    """The US key table Share Clipboard types with: what types, what is skipped, and the length cap."""
+
+    def test_letters_digits_and_shifted_symbols(self):
+        self.assertEqual(TYPEMAP["a"], (0, 4))
+        self.assertEqual(TYPEMAP["A"], (0x02, 4))
+        self.assertEqual(TYPEMAP["z"], (0, 29))
+        self.assertEqual(TYPEMAP["1"], (0, 30))
+        self.assertEqual(TYPEMAP["0"], (0, 39))
+        self.assertEqual(TYPEMAP["!"], (0x02, 30))
+        self.assertEqual(TYPEMAP[")"], (0x02, 39))
+        for plain, shifted in (("-", "_"), ("=", "+"), ("[", "{"), ("]", "}"), ("\\", "|"),
+                               (";", ":"), ("'", '"'), ("`", "~"), (",", "<"), (".", ">"), ("/", "?")):
+            self.assertEqual(TYPEMAP[shifted], (0x02, TYPEMAP[plain][1]))
+        self.assertEqual(TYPEMAP[" "], (0, 44))
+        self.assertEqual(TYPEMAP["\n"], (0, 40))  # Enter
+        self.assertEqual(TYPEMAP["\t"], (0, 43))  # Tab
+
+    def test_characters_without_a_key_are_skipped(self):
+        keys, skipped, cut = type_keys("héllo ☕!", 100)
+        self.assertEqual(len(keys), 6)  # h, l, l, o, space, !
+        self.assertEqual(skipped, 2)    # é and the emoji
+        self.assertEqual(cut, 0)
+        self.assertIn((0x02, KEYMAP[e.KEY_1]), keys)  # "!" is shift+1
+
+    def test_text_over_the_length_cap_is_cut(self):
+        keys, skipped, cut = type_keys("x" * 500, 400)
+        self.assertEqual((len(keys), skipped, cut), (400, 0, 100))
+
+
+class PasteChord(unittest.TestCase):
+    """Ctrl+V / Super+V while a device has control: the clipboard chord, or the key as usual."""
+
+    def chord(self, mod=e.KEY_LEFTCTRL, share=True, app=True, repeats=0):
+        """Press and release mod+V: (bridge, what the device got, clipboard requests made)."""
+        bridge, phone, mouse = make_mouse_bridge()
+        requests = []
+        bridge.paste_replay = None
+
+        def request_paste():
+            requests.append(True)
+            return app
+        bridge.request_paste = request_paste
+        with mock.patch.object(config, "SHARE_CLIPBOARD", share):
+            mouse.push((e.EV_KEY, mod, 1), SYN, (e.EV_KEY, e.KEY_V, 1), SYN,
+                       *[ev for _ in range(repeats) for ev in ((e.EV_KEY, e.KEY_V, 2), SYN)],
+                       (e.EV_KEY, e.KEY_V, 0), SYN, (e.EV_KEY, mod, 0), SYN)
+            bridge.handle(7)
+        return bridge, [report for _rid, report in phone.raw], requests
+
+    def test_asks_the_gui_instead_of_typing_the_chord(self):
+        bridge, reports, requests = self.chord()
+        self.assertEqual(requests, [True])
+        self.assertFalse(any(KEYMAP[e.KEY_V] in r[2:8] for r in reports))  # the chord never reached it
+        self.assertIn(bytes(8), reports)  # and Ctrl was let go on the device
+        self.assertEqual(bridge.paste_replay, (0x01, KEYMAP[e.KEY_V]))  # for a read with no text
+
+    def test_holding_the_chord_asks_once(self):
+        bridge, reports, requests = self.chord(repeats=5)  # key repeats while the clipboard is read
+        self.assertEqual(requests, [True])
+        self.assertFalse(any(KEYMAP[e.KEY_V] in r[2:8] for r in reports))
+
+    def test_super_v_asks_too(self):
+        bridge, reports, requests = self.chord(mod=e.KEY_LEFTMETA)
+        self.assertEqual(requests, [True])
+        self.assertFalse(any(KEYMAP[e.KEY_V] in r[2:8] for r in reports))
+        self.assertEqual(bridge.paste_replay, (0x08, KEYMAP[e.KEY_V]))
+
+    def test_passes_through_when_off(self):
+        bridge, reports, requests = self.chord(share=False)
+        self.assertEqual(requests, [])
+        self.assertTrue(any(KEYMAP[e.KEY_V] in r[2:8] for r in reports))
+        self.assertIsNone(bridge.paste_replay)
+
+    def test_passes_through_with_no_gui_to_read_the_clipboard(self):
+        bridge, reports, requests = self.chord(app=False)
+        self.assertEqual(requests, [True])
+        self.assertTrue(any(KEYMAP[e.KEY_V] in r[2:8] for r in reports))
+        self.assertIsNone(bridge.paste_replay)
+
+
+class Typing(unittest.TestCase):
+    """Typing the clipboard on the device: down + up per character, and the chord when there is none."""
+
+    def make(self):
+        bridge, phone, _mouse = make_mouse_bridge()
+        bridge.paste_replay = (0x01, KEYMAP[e.KEY_V])
+        bridge.typing, bridge.typing_phone, bridge.typing_at = [], None, 0.0
+        return bridge, phone
+
+    @staticmethod
+    def run_typing(bridge):
+        with mock.patch("side_control.backend.bridge.TYPE_DELAY_S", 0.0):
+            for _ in range(1000):
+                bridge.step_typing()
+                if not bridge.typing:
+                    break
+
+    def test_each_character_is_a_press_and_release(self):
+        bridge, phone = self.make()
+        bridge.type_text("Hi")
+        self.run_typing(bridge)
+        reports = [report for rid, report in phone.raw if rid == 1]
+        self.assertEqual(reports[:4], [bytes([0x02, 0, 11, 0, 0, 0, 0, 0]), bytes(8),  # shift+h down, up
+                                       bytes([0, 0, 12, 0, 0, 0, 0, 0]), bytes(8)])  # i down, up
+        self.assertTrue(all(rid == 1 for rid, _report in phone.raw))  # key reports only: the pointer
+        self.assertIsNone(bridge.paste_replay)                         # model never hears of typing
+
+    def test_nothing_to_type_replays_the_chord(self):
+        bridge, phone = self.make()
+        bridge.type_text(None)
+        self.assertEqual(phone.raw[0], (1, bytes([0x01, 0, KEYMAP[e.KEY_V], 0, 0, 0, 0, 0])))
+        self.assertEqual(bridge.typing, [])
+        self.assertIsNone(bridge.paste_replay)
+
+    def test_typing_stops_when_control_changes(self):
+        bridge, phone = self.make()
+        bridge.type_text("abc")
+        bridge.step_typing()
+        typed = len(phone.raw)
+        bridge.on_phone = False
+        bridge.step_typing()
+        self.assertEqual(bridge.typing, [])
+        self.assertEqual(len(phone.raw), typed)  # nothing more was sent
 
 
 if __name__ == "__main__":
