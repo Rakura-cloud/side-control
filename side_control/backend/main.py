@@ -13,7 +13,7 @@ import dbus
 import evdev
 
 from . import config
-from .bluez import paired_devices, setup_bluez
+from .bluez import paired_devices, setup_bluez, watch_returns
 from .bridge import Bridge
 from .compositor import Hyprland
 from .config import BATTERY_EVERY, INPUT_RESCAN_S, MOUSE_INTERVAL, NAME, RECONNECT_EVERY, SOCK_PATH
@@ -59,6 +59,7 @@ def main():
             "side-control@<uid>.service")
     fleet = Fleet(int(adapter_path.rsplit("hci", 1)[1]))
     fleet.sync_paired(paired_devices(bus, adapter_path))
+    watch_returns(bus, fleet)  # dial at once when a paired device shows a sign of being back
     bridge = Bridge(fleet)
     sys.setswitchinterval(0.001)  # the GLib thread (scan, panel) must not hold up pointer reports
     proximity = Proximity(bus, adapter_path)

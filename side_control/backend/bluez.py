@@ -10,6 +10,7 @@ import dbus.mainloop.glib
 import dbus.service
 from gi.repository import GLib
 
+from . import config
 from .config import NAME
 from .events import log
 from .hid import HID_UUID, SDP_RECORD
@@ -112,6 +113,21 @@ def setup_bluez(adapter_name=None):
 
     threading.Thread(target=GLib.MainLoop().run, daemon=True).start()
     return str(info["Address"]), bus, path
+
+
+def watch_returns(bus, fleet):
+    """A sign a paired device is back - BlueZ reporting an RSSI (every LE advertisement it resolves
+    to a bonded device), or the link coming up - makes the fleet dial it at once instead of waiting
+    for RECONNECT_EVERY. The link going down is no such sign, and the link coming up counts only when
+    dial-only: otherwise it is most likely the device opening the HID channels itself, which a dial
+    would race. Runs on the GLib thread, where the other D-Bus work happens."""
+
+    def on_props(_iface, changed, _invalidated, path=None):
+        if "RSSI" in changed or (changed.get("Connected") and config.DIAL_ONLY):
+            fleet.back_in_range(str(path).rsplit("dev_", 1)[1].replace("_", ":"))
+
+    bus.add_signal_receiver(on_props, "PropertiesChanged", "org.freedesktop.DBus.Properties",
+                            arg0="org.bluez.Device1", path_keyword="path")
 
 
 def paired_devices(bus, adapter_path):

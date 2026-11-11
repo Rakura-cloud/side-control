@@ -82,6 +82,9 @@ TAP_TRAVEL_MM = 2.0
 RECONNECT_EVERY = 10  # seconds between attempts to dial a paired device (doubling per failure, max 120)
 DIAL_ONLY = False     # set when bluetoothd's input plugin holds the HID channels: devices cannot connect
 DIAL_ONLY_MAX_S = 30  # to us then, so keep dialing them more often
+DIAL_TRIGGER_GAP_S = 10  # a sign a device is back (its advertisement, the link coming up) dials it
+                         # at once, but one sign per device at most this often: advertisements arrive
+                         # every 0.5 s, and one that cannot be reached must not be paged for each
 MOUSE_INTERVAL = 0.008  # min seconds between motion reports; motion in between is merged
 INPUT_RESCAN_S = 1.0    # seconds between looks for new input devices (a Bluetooth mouse waking up)
 

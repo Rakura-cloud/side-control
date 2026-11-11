@@ -12,11 +12,11 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from side_control.backend import config  # noqa: E402
 from side_control.backend.bridge import Bridge  # noqa: E402
-from side_control.backend.devices import SCREEN_POINTS, Phone  # noqa: E402
+from side_control.backend.devices import SCREEN_POINTS, Fleet, Phone  # noqa: E402
 from side_control.backend.handoff import Handoff, handoff_exits  # noqa: E402
 from side_control.backend.hid import REPORT_MAP  # noqa: E402
 from side_control.backend import inputs  # noqa: E402
-from side_control.backend.bluez import form_of  # noqa: E402
+from side_control.backend.bluez import form_of, watch_returns  # noqa: E402
 from side_control.backend.compositor import Hyprland  # noqa: E402
 from side_control.monitors import along_edge, outer_edges, pieces, point_on_edge  # noqa: E402
 from side_control.backend.inputs import Accel, Touchpad  # noqa: E402
@@ -118,6 +118,16 @@ class FakeMouse:
 class FakeFleet:
     def connected(self):
         return []
+
+
+class FakeBus:
+    """Stands in for a dbus.SystemBus: records the signal receiver instead of registering one."""
+
+    def __init__(self):
+        self.receivers = []
+
+    def add_signal_receiver(self, handler, signal, interface, **match):
+        self.receivers.append((handler, signal, interface, match))
 
 
 def make_mouse_bridge(on_phone=True):
@@ -261,6 +271,81 @@ class PairedForms(unittest.TestCase):
         self.assertEqual(form_of(ipad), "tablet")
         self.assertIsNone(form_of(le_mouse))
         self.assertIsNone(form_of(headphones))
+
+
+class DialOnReturn(unittest.TestCase):
+    """A sign a paired device is back - an advertisement, the link coming up - dials it at once,
+    through a fake fleet (no Bluetooth)."""
+
+    def make_fleet(self):
+        fleet = Fleet(0)
+        for address in ("AA:BB:CC:DD:EE:FF", "11:22:33:44:55:66"):
+            fleet.get(address, "iPhone").next_dial = time.monotonic() + 30  # the back-off still holds
+        return fleet
+
+    def test_a_sign_dials_at_once(self):
+        fleet = self.make_fleet()
+        fleet.back_in_range("AA:BB:CC:DD:EE:FF")
+        self.assertTrue(fleet.dial_now)
+        self.assertEqual(fleet.phones["AA:BB:CC:DD:EE:FF"].next_dial, 0.0)  # beats the 30 s back-off
+
+    def test_a_device_we_do_not_know_is_not_ours_to_dial(self):
+        fleet = self.make_fleet()
+        fleet.back_in_range("22:33:44:55:66:77")
+        self.assertFalse(fleet.dial_now)
+
+    def test_signs_come_at_most_once_per_gap(self):
+        """A device that keeps advertising must not cause a dial storm."""
+        fleet = self.make_fleet()
+        phone = fleet.phones["AA:BB:CC:DD:EE:FF"]
+        fleet.back_in_range(phone.address)
+        for _ in range(5):  # an advertisement about every half second
+            fleet.dial_now = False
+            fleet.back_in_range(phone.address)
+            self.assertFalse(fleet.dial_now)
+        phone.back_t -= config.DIAL_TRIGGER_GAP_S  # the gap has passed
+        fleet.back_in_range(phone.address)
+        self.assertTrue(fleet.dial_now)
+
+    def test_the_gap_is_per_device(self):
+        fleet = self.make_fleet()
+        fleet.back_in_range("AA:BB:CC:DD:EE:FF")
+        fleet.dial_now = False
+        fleet.back_in_range("11:22:33:44:55:66")  # another device, its own gap
+        self.assertTrue(fleet.dial_now)
+
+
+class BackSignals(unittest.TestCase):
+    """The BlueZ PropertyChanges that say a device is back, through a fake bus."""
+
+    def setUp(self):
+        self.fleet = Fleet(0)
+        self.phone = self.fleet.get("AA:BB:CC:DD:EE:FF", "iPhone")
+        self.bus = FakeBus()
+        watch_returns(self.bus, self.fleet)
+        self.on_props, _, _, self.match = self.bus.receivers[0]
+        self.path = "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"
+
+    def test_watches_only_device_property_changes(self):
+        self.assertEqual(self.match, {"arg0": "org.bluez.Device1", "path_keyword": "path"})
+
+    def test_an_advertisement_dials_at_once(self):
+        self.on_props("org.bluez.Device1", {"RSSI": -60}, [], path=self.path)
+        self.assertTrue(self.fleet.dial_now)
+
+    def test_the_link_coming_up_dials_at_once_only_when_dial_only(self):
+        """With Own HID Profile on, the link coming up is most likely the device connecting itself."""
+        for dial_only in (False, True):
+            self.fleet.dial_now, self.phone.back_t = False, 0.0
+            with mock.patch.object(config, "DIAL_ONLY", dial_only):
+                self.on_props("org.bluez.Device1", {"Connected": True}, [], path=self.path)
+            self.assertEqual(self.fleet.dial_now, dial_only)
+
+    def test_the_link_going_down_is_no_sign_it_is_back(self):
+        self.on_props("org.bluez.Device1", {"Connected": False}, [], path=self.path)
+        self.on_props("org.bluez.Device1", {"Paired": True}, [], path=self.path)
+        self.assertFalse(self.fleet.dial_now)
+        self.assertEqual(self.phone.back_t, 0.0)
 
 
 class ReportMap(unittest.TestCase):

@@ -10,7 +10,7 @@ import time
 from collections import deque
 
 from . import config
-from .config import COUNTS_PER_POINT, DEFAULT_SCREEN, DIAL_ONLY_MAX_S, RECONNECT_EVERY
+from .config import COUNTS_PER_POINT, DEFAULT_SCREEN, DIAL_ONLY_MAX_S, DIAL_TRIGGER_GAP_S, RECONNECT_EVERY
 from .events import log
 from .gatt import GATT_BATTERY, GATT_MANUFACTURER, GATT_MODEL, GATT_SOFTWARE, read_gatt
 from .hid import BACKLOG_BYTES, PSM_CTRL, PSM_INTR, TIOCOUTQ, dial, disable_sniff
@@ -96,6 +96,7 @@ class Phone:
         self.dialing = False
         self.dial_fails = 0
         self.next_dial = 0.0
+        self.back_t = 0.0  # when a sign it was back last beat the dial timer (DIAL_TRIGGER_GAP_S)
         # hand-off settings, pushed by the GUI
         self.zone = None
         self.span = None  # (lo, hi) fraction of a side edge that leads here; None: all of it
@@ -253,7 +254,8 @@ class Fleet:
         self.dev_id = dev_id
         self.phones = {}
         self.dialed = deque()  # (phone, ctrl, intr) handed over by dial threads
-        self.dial_now = False   # set after pairing: dial without waiting for RECONNECT_EVERY
+        self.dial_now = False   # set after pairing, or when a device shows a sign of being back:
+                                # dial without waiting for RECONNECT_EVERY
 
     def get(self, address, alias=None):
         phone = self.phones.get(address)
@@ -270,6 +272,19 @@ class Fleet:
 
     def connected(self):
         return [p for p in self.phones.values() if p.connected]
+
+    def back_in_range(self, address):
+        """A sign a paired device is back - an advertisement, the link coming up: dial it at once
+        (the main loop honours dial_now) instead of waiting for RECONNECT_EVERY. One sign per device
+        counts at most every DIAL_TRIGGER_GAP_S: advertisements keep coming while it is here, and one
+        that cannot be reached must not be paged over and over."""
+        phone = self.phones.get(address)  # anything else is not ours to dial
+        now = time.monotonic()
+        if phone is None or now - phone.back_t < DIAL_TRIGGER_GAP_S:
+            return
+        phone.back_t = now
+        phone.next_dial = 0.0  # the sign beats the failure back-off
+        self.dial_now = True
 
     def dial_missing(self):
         now = time.monotonic()
