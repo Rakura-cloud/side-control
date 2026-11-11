@@ -38,7 +38,8 @@ the phone or tablet: it sees an ordinary Bluetooth keyboard and mouse.
 - **Tray icon.** Shows where the cursor is and switches between devices (StatusNotifierItem, e.g. Waybar).
 - **Pairing and device info.** Pair from the app; see each device's OS version and battery.
 - **Updates.** Side Control looks for a new version on GitHub once a day and says so in a banner; an
-  AppImage downloads it in place and restarts into it.
+  AppImage downloads it in place and restarts into it. Turn on **Dev Builds** in Settings to get test
+  builds from the dev branch before they are released.
 
 | | |
 |---|---|
@@ -63,8 +64,9 @@ still needs what Side Control talks to: BlueZ, polkit, and Hyprland for edge han
 
 #### Dev build
 
-To try fixes before they are released, download `Side_Control-<version>-dev.<commit>-x86_64.AppImage`
-from the [dev pre-release](https://github.com/Rakura-cloud/side-control/releases/tag/dev), rebuilt on
+To try fixes before they are released, turn on **Dev Builds** in Settings and let the app offer the
+dev branch's builds, or download `Side_Control-<version>-dev.<commit>-x86_64.AppImage` from the
+[dev pre-release](https://github.com/Rakura-cloud/side-control/releases/tag/dev), rebuilt on
 every change to the `dev` branch. Settings shows which commit it is.
 
 > **Warning:** dev builds are untested between releases and can break, including the input takeover

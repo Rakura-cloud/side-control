@@ -85,10 +85,16 @@ class Versions(unittest.TestCase):
 
 
 class Releases(unittest.TestCase):
-    def test_fetches_the_channel_s_release(self):
-        for version, tail in (("0.1.0", "/latest"), ("0.1.0-dev.abc", "/tags/dev")):
+    def test_fetches_the_chosen_channel_s_release(self):
+        for chosen, tail in (("stable", "/latest"), ("dev", "/tags/dev")):
             opener = FakeOpener({update.RELEASES_URL + tail: json.dumps(RELEASE).encode()})
-            self.assertEqual(update.fetch_release(version, opener)["html_url"], RELEASE["html_url"])
+            self.assertEqual(update.fetch_release(chosen, opener)["html_url"], RELEASE["html_url"])
+            self.assertEqual(opener.asked, [update.RELEASES_URL + tail])
+
+    def test_find_update_follows_the_chosen_channel(self):
+        for chosen, tail in (("stable", "/latest"), ("dev", "/tags/dev")):
+            opener = FakeOpener({update.RELEASES_URL + tail: json.dumps(RELEASE).encode()})
+            self.assertEqual(update.find_update(chosen, "0.1.0", opener).version, "0.2.0")
             self.assertEqual(opener.asked, [update.RELEASES_URL + tail])
 
     def test_picks_the_appimage_and_its_checksum(self):
@@ -109,20 +115,29 @@ class Releases(unittest.TestCase):
         self.assertIsNone(update.asset_version("Side_Control-0.2.0-x86_64.AppImage.zsync"))
 
     def test_check_release(self):
-        found = update.check_release(RELEASE, "0.1.0")
+        found = update.check_release(RELEASE, "0.1.0", "stable")
         self.assertEqual(found.version, "0.2.0")
         self.assertEqual(found.url, RELEASE["html_url"])
         self.assertEqual(found.asset["name"], "Side_Control-0.2.0-x86_64.AppImage")
-        self.assertIsNone(update.check_release(RELEASE, "0.2.0"))  # the same is not newer
-        self.assertIsNone(update.check_release(RELEASE, "0.3.0"))
-        self.assertIsNone(update.check_release({"assets": []}, "0.1.0"))
+        self.assertIsNone(update.check_release(RELEASE, "0.2.0", "stable"))  # the same is not newer
+        self.assertIsNone(update.check_release(RELEASE, "0.3.0", "stable"))
+        self.assertIsNone(update.check_release({"assets": []}, "0.1.0", "stable"))
 
     def test_check_release_on_the_dev_channel(self):
         dev, _opener = fake_release(b"12345678")
         dev["assets"][0]["name"] = "Side_Control-0.2.0-dev.bbb-x86_64.AppImage"
-        self.assertEqual(update.check_release(dev, "0.2.0-dev.aaa").version, "0.2.0-dev.bbb")
-        self.assertIsNone(update.check_release(dev, "0.2.0-dev.bbb"))
-        self.assertIsNone(update.check_release(dev, "0.3.0-dev.aaa"))  # a newer base stays newer
+        self.assertEqual(update.check_release(dev, "0.2.0-dev.aaa", "dev").version, "0.2.0-dev.bbb")
+        self.assertIsNone(update.check_release(dev, "0.2.0-dev.bbb", "dev"))
+        self.assertIsNone(update.check_release(dev, "0.3.0-dev.aaa", "dev"))  # a newer base stays newer
+
+    def test_check_release_offers_the_other_channel_to_switch_to(self):
+        """The chosen channel's release is offered even when it is not newer, so a dev build can
+        switch back to stable (and the other way round)."""
+        self.assertEqual(update.check_release(RELEASE, "0.3.0-dev.abc", "stable").version, "0.2.0")
+        dev, _opener = fake_release(b"12345678")
+        dev["assets"][0]["name"] = "Side_Control-0.1.0-dev.abc-x86_64.AppImage"
+        self.assertEqual(update.check_release(dev, "0.2.0", "dev").version, "0.1.0-dev.abc")
+        self.assertIsNone(update.check_release(dev, "0.2.0-dev.abc", "dev"))  # its own channel: not newer
 
 
 class Download(unittest.TestCase):
@@ -157,7 +172,7 @@ class Download(unittest.TestCase):
                 path = os.path.join(tmp, "Side_Control-0.2.0-x86_64.AppImage")
                 with open(path, "wb") as f:
                     f.write(b"the old one")
-                update.install(update.check_release(release, "0.1.0"), path, opener)
+                update.install(update.check_release(release, "0.1.0", "stable"), path, opener)
                 with open(path, "rb") as f:
                     self.assertEqual(f.read(), data)
                 with open(path + ".old", "rb") as f:  # kept until the new one has started once
@@ -176,7 +191,7 @@ class Download(unittest.TestCase):
                 with open(path, "wb") as f:
                     f.write(b"the old one")
                 with self.assertRaises(update.UpdateError):
-                    update.install(update.check_release(release, "0.1.0"), path, opener)
+                    update.install(update.check_release(release, "0.1.0", "stable"), path, opener)
                 with open(path, "rb") as f:
                     self.assertEqual(f.read(), b"the old one")  # the running file is left alone
                 self.assertFalse(os.path.exists(path + ".new"))

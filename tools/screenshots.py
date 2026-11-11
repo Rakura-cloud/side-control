@@ -74,7 +74,7 @@ from side_control.app.window import PAGES, Window  # noqa: E402
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 
-def offline(_version):
+def offline(*_args):
     raise OSError("the screenshots run without network")
 
 
@@ -108,7 +108,7 @@ def script(win):
               lambda: win.ask_forget("AA:00:00:00:00:02"), lambda: shot(win, "forget"), lambda: close_dialog(win),
               lambda: win.show_pair(), lambda: shot(win, "pair"), lambda: close_dialog(win),
               lambda: win.show_page(0),
-              lambda: win.show_update(update.check_release(FAKE_RELEASE, update.VERSION)),
+              lambda: win.show_update(update.check_release(FAKE_RELEASE, update.VERSION, "stable")),
               lambda: shot(win, "update"),
               lambda: print("sent to the backend:", *received, sep="\n  "),
               lambda: win.get_application().quit()]

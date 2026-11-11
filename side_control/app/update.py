@@ -4,8 +4,9 @@
 The pure functions take what they work on and an `opener` instead of reaching for the network
 themselves, so tests can give them a fake release and a fake download. A version is "X.Y.Z" (stable)
 or "X.Y.Z-dev.<sha>" (the rolling dev channel, released under the `dev` tag, with the sha it was
-built from in the asset names). The mixin turns what the check finds into the window's banner and
-runs the download; the app checks at start and then once a day.
+built from in the asset names). The channel to check is the one the user chose in Settings ("Dev
+Builds"), not the one the running build came from. The mixin turns what the check finds into the
+window's banner and runs the download; the app checks at start and then once a day.
 """
 import collections
 import hashlib
@@ -92,18 +93,21 @@ def pick_assets(assets, suffix="-x86_64.AppImage"):
     return appimage, checksum
 
 
-def check_release(release, running, suffix="-x86_64.AppImage"):
-    """What `release` offers over the running version: an Update, or None when it is not newer."""
+def check_release(release, running, chosen, suffix="-x86_64.AppImage"):
+    """What `release` offers over the running version: an Update, or None when there is nothing to
+    take. The `chosen` channel's release is always worth offering while the running build came from
+    the other one (switching back), and only when it is newer within one channel."""
     asset, checksum = pick_assets(release.get("assets") or [], suffix)
     version = asset_version(asset["name"], suffix) if asset else None
-    if version is None or not is_newer(version, running):
+    if version is None or (chosen == channel(running) and not is_newer(version, running)):
         return None
     return Update(version, release.get("html_url") or RELEASES_PAGE, asset, checksum)
 
 
-def fetch_release(version, opener=urllib.request.urlopen):
-    """The GitHub release this version is updated from: the latest one, or the dev channel's."""
-    path = "/tags/dev" if channel(version) == "dev" else "/latest"
+def fetch_release(chosen, opener=urllib.request.urlopen):
+    """The GitHub release the `chosen` channel ("dev" or "stable") publishes: the dev tag's, or the
+    latest one."""
+    path = "/tags/dev" if chosen == "dev" else "/latest"
     with opener(urllib.request.Request(RELEASES_URL + path, headers=HEADERS)) as src:
         return json.load(src)
 
@@ -113,9 +117,10 @@ def fetch_text(url, opener=urllib.request.urlopen):
         return src.read().decode("utf-8", errors="replace")
 
 
-def find_update(version=VERSION, opener=urllib.request.urlopen):
-    """The update GitHub has for this Side Control, or None."""
-    return check_release(fetch_release(version, opener), version, f"-{platform.machine()}.AppImage")
+def find_update(chosen, version=VERSION, opener=urllib.request.urlopen):
+    """The update GitHub has for this Side Control on the `chosen` channel, or None."""
+    return check_release(fetch_release(chosen, opener), version, chosen,
+                         f"-{platform.machine()}.AppImage")
 
 
 # --- downloading and replacing the AppImage ---
@@ -209,22 +214,31 @@ class UpdateMixin:
         self.check_updates()
 
     def check_updates(self):
+        """Once a day, and when "Check for Updates" comes on: look now, if the checks are on."""
         if self.settings["check_updates"]:
-            threading.Thread(target=self._check_updates, daemon=True).start()
+            self.check_updates_now()
         return GLib.SOURCE_CONTINUE
 
-    def _check_updates(self):
+    def check_updates_now(self):
+        """Look on the chosen channel right away. Flipping "Dev Builds" comes here even while the
+        once-a-day checks are off: the user just asked, and the release to switch to should show up
+        at once."""
+        chosen = "dev" if self.settings["dev_builds"] else "stable"
+        threading.Thread(target=self._check_updates, args=(chosen,), daemon=True).start()
+
+    def _check_updates(self, chosen):
         try:
-            found = find_update(VERSION)
+            found = find_update(chosen)
         except (OSError, ValueError) as err:
             print(f"update check: {err}", file=sys.stderr)  # offline is nothing to make a fuss about
             return
-        if found:
-            GLib.idle_add(self.show_update, found)
+        GLib.idle_add(self.show_update, found)
 
     def show_update(self, update):
         """The banner: what is new, where its notes are, and the button to take it (or git pull)."""
-        if update is None:
+        if self.update_state in ("downloading", "installed"):  # an update is under way or waiting
+            return GLib.SOURCE_REMOVE                         # for its restart: leave the banner be
+        if update is None:  # the chosen channel has nothing to offer (Dev Builds was flipped)
             self.update_banner.set_revealed(False)
             return GLib.SOURCE_REMOVE
         self.update, self.update_state = update, "found"
