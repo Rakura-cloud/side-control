@@ -16,7 +16,7 @@ PAIR_STEPS = {  # what the backend reports about a pairing, in the pair dialog's
 }
 PAIR_ERRORS = {  # the backend's error codes in plain English, each with a Retry
     "not_found": "Couldn’t find {name}. Move it closer and keep Bluetooth settings open on it, then try again.",
-    "rejected": "The pairing was cancelled on {name}. Confirm it when the device asks, then try again.",
+    "rejected": "Pairing was cancelled on {name}.",
     "timeout": "{name} did not answer in time. Keep Bluetooth settings open on it, then try again.",
     "exists": "{name} is already paired with this computer. If it does not connect, forget it on both sides and pair again.",
     "failed": "Pairing with {name} failed. Try again.",
