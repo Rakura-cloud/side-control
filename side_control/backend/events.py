@@ -15,3 +15,9 @@ def log(msg):
     EVENTS.append({"type": "log", "time": stamp, "msg": msg})
     with TERM_LOCK:
         print(stamp, msg, flush=True)
+
+
+def pair_step(address, step):
+    """One step of a pairing in progress (searching, found, confirm, paired): the app's pairing
+    dialog shows it as it happens. Any thread may call this."""
+    EVENTS.append({"type": "pairing", "address": address, "step": step})

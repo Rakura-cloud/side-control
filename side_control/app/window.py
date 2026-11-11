@@ -50,6 +50,8 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
         self.target = None
         self.pair_dialog = None
         self.nearby = None
+        self.nearby_names = {}  # address -> name of the nearby devices shown in the pair dialog
+        self.pair_address = None  # the device the pair dialog is pairing with (or last tried)
         self.pending_guide = None  # address just paired: its setup guide opens once it appears
         self.adapter = None
         self.overlay = EdgeOverlay()
@@ -193,6 +195,8 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
         kind = msg.get("type")
         if kind == "state":
             self.on_state(msg)
+        elif kind == "pairing":
+            self.on_pairing(msg)
         elif kind == "paired":
             self.on_paired(msg)
         elif kind == "shake":
@@ -235,10 +239,7 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
             changed = True
         if st.get("nearby") is not None:
             self.show_nearby(st["nearby"], st.get("pairing"))
-        if self.pending_guide in self.devs:
-            address, self.pending_guide = self.pending_guide, None
-            if self.devs[address]["os"] in ("iOS", "iPadOS"):
-                self.show_guide(address)
+        self.open_pending_guide()
         if self.resync:
             self.resync = False
             self.send_options()
@@ -290,7 +291,8 @@ class Window(PagesMixin, DialogsMixin, BluetoothMixin, Adw.ApplicationWindow):
 
     def send_options(self):
         options = {k: self.settings[k] for k in BACKEND_OPTIONS}
-        options["discoverable"] = self.settings["visible"]
+        # "Visible to Nearby Devices", and always findable while the pair dialog is open
+        options["discoverable"] = self.settings["visible"] or self.pair_dialog is not None
         if self.settings["device_name"]:
             options["device_name"] = self.settings["device_name"]
         self.backend.send(cmd="set_options", **options)

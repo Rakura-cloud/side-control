@@ -55,7 +55,17 @@ def serve():
             msg = json.loads(line)
             received.append(msg)
             if msg.get("cmd") == "discover" and msg.get("on"):
-                send(dict(STATE, nearby=NEARBY, pairing=NEARBY[1]["address"]))
+                send(dict(STATE, nearby=NEARBY, pairing=None))
+            elif msg.get("cmd") == "pair":
+                address = msg["address"]
+                if address == NEARBY[1]["address"]:  # a pairing going on: confirm on the device
+                    send(dict(STATE, nearby=NEARBY, pairing=address))
+                    send({"type": "pairing", "address": address, "step": "confirm"})
+                else:  # and one that failed, with its error code
+                    send(dict(STATE, nearby=NEARBY, pairing=None))
+                    send({"type": "pairing", "address": address, "step": "found"})
+                    send({"type": "paired", "address": address, "ok": False, "error_code": "rejected",
+                          "error": "org.bluez.Error.AuthenticationRejected"})
 
 
 threading.Thread(target=serve, daemon=True).start()
@@ -89,7 +99,11 @@ def script(win):
     steps += [lambda: win.show_page(0),
               lambda: win.show_guide("AA:00:00:00:00:01"), lambda: shot(win, "guide"), lambda: close_dialog(win),
               lambda: win.ask_forget("AA:00:00:00:00:02"), lambda: shot(win, "forget"), lambda: close_dialog(win),
-              lambda: win.show_pair(), lambda: shot(win, "pair"), lambda: close_dialog(win),
+              lambda: win.show_pair(), lambda: shot(win, "pair"),
+              lambda: win.backend.send(cmd="pair", address=NEARBY[1]["address"]),
+              lambda: shot(win, "pair-progress"),
+              lambda: win.backend.send(cmd="pair", address=NEARBY[0]["address"]),
+              lambda: shot(win, "pair-error"), lambda: close_dialog(win),
               lambda: print("sent to the backend:", *received, sep="\n  "),
               lambda: win.get_application().quit()]
 
